@@ -74,6 +74,8 @@ class ConvolutionOpInfo(OpInfo):
 
     # IGEMM details for TileAndFuse pipeline (None if not available).
     igemm_details: Optional[iree_codegen.IGEMMGenericConvDetails] = None
+    # Convolution to IGEMM transformation info (None if not available).
+    conv_to_igemm_info: Optional[common.ConvToIgemmInfo] = None
 
 
 @dataclass
@@ -275,6 +277,62 @@ class ConvolutionOpInterfaceParser(DispatchParser):
         # for any convolution layout (nhwc_hwcf, nchw_fchw, etc.).
         igemm_details = iree_codegen.get_igemm_generic_conv_details(root_op)
 
+        # Build ConvToIgemmInfo using convolution_dims (similar to C++ implementation).
+        conv_to_igemm_info = None
+        if igemm_details:
+            conv_to_igemm_info = common.ConvToIgemmInfo()
+
+            # Get input operand information (first operand).
+            input_type = lhs_type
+            input_shape = input_type.shape
+            input_map = indexing_maps[0]
+
+            # Store the convolution dimensions.
+            conv_to_igemm_info.conv_dims = convolution_dims
+
+            # Process input channel dimensions.
+            # Note: For convolutions with strides, expressions may be complex (e.g., d0*2 + d1).
+            # We use isFunctionOfDim to check if the expression depends on a specific dimension.
+            for dim in convolution_dims.input_channel:
+                for idx, expr in enumerate(input_map.results):
+                    if common.is_affine_expr_function_of_dim(expr, dim):
+                        conv_to_igemm_info.input_channel_dim_to_size[dim] = input_shape[
+                            idx
+                        ]
+
+            # Process output image dimensions to find input image positions.
+            input_image_pos = []
+            for dim in convolution_dims.output_image:
+                for idx, expr in enumerate(input_map.results):
+                    if common.is_affine_expr_function_of_dim(expr, dim):
+                        input_image_pos.append(idx)
+
+            # Process batch dimensions to find batch positions.
+            batch_pos = []
+            for dim in convolution_dims.batch:
+                for idx, expr in enumerate(input_map.results):
+                    if common.is_affine_expr_function_of_dim(expr, dim):
+                        batch_pos.append(idx)
+
+            # Sort positions.
+            input_image_pos = sorted(input_image_pos)
+            batch_pos = sorted(batch_pos)
+
+            # Determine if batch dimension is last.
+            conv_to_igemm_info.is_batch_dim_last = (
+                len(batch_pos) > 0 and batch_pos[-1] == len(input_shape) - 1
+            )
+
+            # Determine if spatial dimension is last.
+            conv_to_igemm_info.is_spatial_dim_last = (
+                len(input_image_pos) > 0 and input_image_pos[-1] == len(input_shape) - 1
+            )
+
+            # Store conv to IGEMM dimension mapping from IGEMM details.
+            conv_to_igemm_info.conv_to_igemm_dim_map = dict(
+                igemm_details.conv_to_igemm_dim_map
+            )
+
         self._op_info: ConvolutionOpInfo = ConvolutionOpInfo(
             root_op=root_op,
             indexing_maps=indexing_maps,
@@ -292,6 +350,7 @@ class ConvolutionOpInterfaceParser(DispatchParser):
             strides=strides,
             dilations=dilations,
             igemm_details=igemm_details,
+            conv_to_igemm_info=conv_to_igemm_info,
         )
 
     def has_valid_root_op(self) -> bool:

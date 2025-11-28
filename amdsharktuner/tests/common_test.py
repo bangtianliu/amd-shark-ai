@@ -567,3 +567,28 @@ def test_calculate_padded_dimensions(
         assert M_padded == [200], f"Expected M not padded, got {M_padded}"
         assert N_padded == [300], f"Expected N not padded, got {N_padded}"
         assert padding_applied == False
+
+
+def test_is_affine_expr_function_of_dim(tuner_ctx: common.TunerContext) -> None:
+    with tuner_ctx.mlir_ctx:
+        d0 = ir.AffineDimExpr.get(0)
+        d1 = ir.AffineDimExpr.get(1)
+
+        assert common.is_affine_expr_function_of_dim(d0, 0) == True
+        assert common.is_affine_expr_function_of_dim(d0, 1) == False
+
+        c42 = ir.AffineConstantExpr.get(42)
+        assert common.is_affine_expr_function_of_dim(c42, 0) == False
+        assert common.is_affine_expr_function_of_dim(c42, 1) == False
+
+        add_expr = d0 + d1
+        assert common.is_affine_expr_function_of_dim(add_expr, 0) == True
+        assert common.is_affine_expr_function_of_dim(add_expr, 1) == True
+
+        mul_expr = d1 * 2
+        assert common.is_affine_expr_function_of_dim(mul_expr, 0) == False
+        assert common.is_affine_expr_function_of_dim(mul_expr, 1) == True
+
+        complex_expr = (d0 + d1) * 2
+        assert common.is_affine_expr_function_of_dim(complex_expr, 0) == True
+        assert common.is_affine_expr_function_of_dim(complex_expr, 1) == True

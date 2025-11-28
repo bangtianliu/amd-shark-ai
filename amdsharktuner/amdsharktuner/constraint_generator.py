@@ -82,6 +82,7 @@ def generate_generic_contraction_solutions(
     allowed_waves_per_eu: list[int] = [2],
     pipeline_options_search_space: dispatch_constraints.PipelineOptionsSearchSpace = dispatch_constraints.PipelineOptionsSearchSpace(),
     igemm_details: Optional[iree_codegen.IGEMMGenericConvDetails] = None,
+    conv_to_igemm_info: Optional[common.ConvToIgemmInfo] = None,
 ) -> Iterator[list[common.TuningConfiguration]]:
     adjust_problem_size_for_pipeline(
         contraction_dims,
@@ -258,6 +259,7 @@ def generate_generic_contraction_solutions(
 
         promote_operands = [0, 1]
         padding = None
+        padding_conv = None
         if padding_applied:
             # TODO: Remove promotion of operand 2 once codegen supports handling padded outputs without promotion.
             promote_operands = [0, 1, 2]
@@ -270,6 +272,18 @@ def generate_generic_contraction_solutions(
             padding_tile_sizes[inner_k_dim] *= mma_intrinsic_k
 
             padding = padding_tile_sizes
+
+            # Calculate padding_conv sizes for convolutions when using IGEMM.
+            if conv_to_igemm_info and igemm_details:
+                # Use IGEMM loop bounds directly from igemm_details.
+                bounds = list(igemm_details.igemm_loop_bounds)
+                padding_conv = common.get_padding_conv_sizes(
+                    bounds,
+                    padding_tile_sizes,
+                    workgroup_tile_sizes,
+                    reduction_tile_sizes,
+                    conv_to_igemm_info,
+                )
         # Setting subgroup basis.
         # TODO(Bangtian): Sync changes from IREE PR: https://github.com/iree-org/iree/pull/22000.
         subgroup_basis_counts = [1] * num_loops
@@ -294,6 +308,7 @@ def generate_generic_contraction_solutions(
             pipeline_options_search_space,
             allowed_waves_per_eu,
             padding=padding,
+            padding_conv=padding_conv,
         )
 
         solver.add(z3.simplify(z3.Not(z3.And(list(x == model[x] for x in all_vars)))))
@@ -594,6 +609,8 @@ class ConvolutionOpInterfaceConstraintGenerator(ConstraintGenerator):
         codegen_pipeline: iree_codegen.DispatchLoweringPassPipeline,
         **pipeline_constraint_options,
     ) -> Iterator[list[common.TuningConfiguration]]:
+        # TODO(Bangtian): Simplify the function signature to accept op_info directly instead of
+        # unpacking all individual fields.
         return generate_generic_contraction_solutions(
             tuner_ctx=tuner_context,
             gpu_target_info=gpu_target_info,
@@ -606,6 +623,7 @@ class ConvolutionOpInterfaceConstraintGenerator(ConstraintGenerator):
             indexing_maps=self.op_info.indexing_maps,
             codegen_pipeline=codegen_pipeline,
             igemm_details=self.op_info.igemm_details,
+            conv_to_igemm_info=self.op_info.conv_to_igemm_info,
             **pipeline_constraint_options,
         )
 
