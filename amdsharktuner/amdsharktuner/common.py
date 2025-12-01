@@ -527,39 +527,42 @@ def get_target_info(input_module: ir.Module) -> iree_gpu.TargetInfo:
 
 # The following two functions are from IREE side for padding utility:
 # https://github.com/iree-org/iree/blob/8ae91ebb0e555e660b8a6898f6071476f7a1f20b/compiler/src/iree/compiler/Codegen/Dialect/GPU/TargetUtils/ConfigUtils.cpp#L631-L671
-def maybe_padded_bounds(original_bound: int, alignment: int) -> tuple[int, bool]:
+def compute_next_aligned_bound(original_bound: int, alignment: int) -> int:
+    """Pads a bound up to the next multiple of alignment if needed.
+
+    Returns:
+        The original bound if already aligned, or the next multiple of alignment.
+    """
     remainder = original_bound % alignment
     if remainder == 0:
-        return original_bound, False
-    return original_bound + alignment - remainder, True
+        return original_bound
+    return original_bound + alignment - remainder
 
 
 def get_dim_bounds(
     dims: list[int],
     padding_can_be_expensive: bool,
-) -> tuple[list[int], bool]:
+) -> list[int]:
+    """Computes padded dimension bounds for better tile alignment.
+
+    Returns:
+        List of dimensions, potentially padded to alignment boundaries.
+    """
+    if padding_can_be_expensive:
+        return dims
+
+    # TODO(Bangtian): Make over-padding a tunable parameter. This logic allows over-padding to get larger
+    # tile sizes, which may result in better performance despite doing more padded computation.
     result = []
-    any_padding_applied = False
-
     for dim in dims:
-        if padding_can_be_expensive:
-            result.append(dim)
-            continue
-
-        # TODO: Make over-padding a tunable parameter. This logic allows over-padding to get larger
-        # tile sizes, which may result in better performance despite doing more padded computation.
         if dim > 128:
-            padded, was_padded = maybe_padded_bounds(dim, 128)
-            result.append(padded)
-            any_padding_applied = any_padding_applied or was_padded
+            result.append(compute_next_aligned_bound(dim, 128))
         elif dim > 32:
-            padded, was_padded = maybe_padded_bounds(dim, 32)
-            result.append(padded)
-            any_padding_applied = any_padding_applied or was_padded
+            result.append(compute_next_aligned_bound(dim, 32))
         else:
             result.append(dim)
 
-    return result, any_padding_applied
+    return result
 
 
 # Use padding logic from IREE side:
@@ -570,6 +573,14 @@ def calculate_padded_dimensions(
     contraction_dims: ContractionDimensions,
     contraction_maps: list[ir.AffineMap],
 ) -> tuple[list[int], list[int], bool]:
+    """Calculates padded M and N dimensions for matmul operations.
+
+    Returns:
+        A tuple of (M_padded, N_padded, any_padding_applied) where:
+        - M_padded: Padded M dimensions.
+        - N_padded: Padded N dimensions.
+        - any_padding_applied: True if any padding was applied to M or N, False otherwise.
+    """
     # Detect LHS transposition. Padding is disabled only when LHS is transposed.
     k_dim_inner = contraction_dims.k[-1]
     lhs_map = contraction_maps[0]
@@ -578,7 +589,8 @@ def calculate_padded_dimensions(
 
     transposed_lhs = k_dim_inner != lhs_dim_expr.position
 
-    M_padded, m_padding_applied = get_dim_bounds(M, transposed_lhs)
-    N_padded, n_padding_applied = get_dim_bounds(N, transposed_lhs)
+    M_padded = get_dim_bounds(M, transposed_lhs)
+    N_padded = get_dim_bounds(N, transposed_lhs)
 
-    return M_padded, N_padded, m_padding_applied or n_padding_applied
+    any_padding_applied = M_padded != M or N_padded != N
+    return M_padded, N_padded, any_padding_applied

@@ -92,9 +92,6 @@ def generate_generic_contraction_solutions(
         igemm_details,
     )
 
-    M, N, K = matmul_size.M, matmul_size.N, matmul_size.K
-    tuner_ctx.logger.debug(f"{M},{N},{K}")
-
     # Apply padding for TileAndFuse pipeline to get better tile sizes.
     padding_applied = False
     if codegen_pipeline == iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse:
@@ -105,12 +102,16 @@ def generate_generic_contraction_solutions(
                 map_attr.value for map_attr in igemm_details.igemm_contraction_maps
             ]
 
-        M_padded, N_padded, padding_applied = common.calculate_padded_dimensions(
-            M, N, contraction_dims, padding_maps
+        (
+            matmul_size.M,
+            matmul_size.N,
+            padding_applied,
+        ) = common.calculate_padded_dimensions(
+            matmul_size.M, matmul_size.N, contraction_dims, padding_maps
         )
-        M, N = M_padded, N_padded
-        matmul_size.M = M
-        matmul_size.N = N
+
+    M, N, K = matmul_size.M, matmul_size.N, matmul_size.K
+    tuner_ctx.logger.debug(f"M={M}, N={N}, K={K}, padding_applied={padding_applied}")
 
     m_vars = [z3.Int(f"m{i}") for i in range(len(M))]
     n_vars = [z3.Int(f"n{i}") for i in range(len(N))]

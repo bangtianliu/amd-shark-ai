@@ -507,25 +507,25 @@ def test_get_target_info(tuner_ctx: common.TunerContext) -> None:
     ]
 
 
-def test_maybe_padded_bounds() -> None:
+def test_compute_next_aligned_bound() -> None:
     # Already aligned: no padding.
-    assert common.maybe_padded_bounds(128, 128) == (128, False)
-    assert common.maybe_padded_bounds(64, 32) == (64, False)
+    assert common.compute_next_aligned_bound(128, 128) == 128
+    assert common.compute_next_aligned_bound(64, 32) == 64
 
     # Not aligned: padding needed.
-    assert common.maybe_padded_bounds(100, 128) == (128, True)
-    assert common.maybe_padded_bounds(50, 32) == (64, True)
-    assert common.maybe_padded_bounds(200, 128) == (256, True)
+    assert common.compute_next_aligned_bound(100, 128) == 128
+    assert common.compute_next_aligned_bound(50, 32) == 64
+    assert common.compute_next_aligned_bound(200, 128) == 256
 
 
 def test_get_dim_bounds() -> None:
     # Padding not expensive: apply padding.
-    assert common.get_dim_bounds([200, 300], False) == ([256, 384], True)
-    assert common.get_dim_bounds([128, 256], False) == ([128, 256], False)
-    assert common.get_dim_bounds([200, 50, 20], False) == ([256, 64, 20], True)
+    assert common.get_dim_bounds([200, 300], False) == [256, 384]
+    assert common.get_dim_bounds([128, 256], False) == [128, 256]
+    assert common.get_dim_bounds([200, 50, 20], False) == [256, 64, 20]
 
     # Padding expensive: no padding applied.
-    assert common.get_dim_bounds([100, 200], True) == ([100, 200], False)
+    assert common.get_dim_bounds([100, 200], True) == [100, 200]
 
 
 def test_calculate_padded_dimensions(
