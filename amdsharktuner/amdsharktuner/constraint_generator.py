@@ -501,7 +501,8 @@ def generate_attention_solutions(
         workgroup_size = lookup(sg_m_cnt) * lookup(sg_n_cnt) * lookup(subgroup_size)
 
         # Set prefetch_num_stages based on whether layouts match.
-        # 0/1: don't prefetch, 2: default prefetch, 3: new option.
+        # 0/1 = disable prefetching, 2 = two-stage pipeline (default),
+        # 3 = three-stage pipeline (separate read, write, compute stages).
         layouts_match = bool(model[can_reuse_qk_output_for_pv_input])
         pipeline_options_search_space.prefetch_num_stages = [2 if layouts_match else 0]
 

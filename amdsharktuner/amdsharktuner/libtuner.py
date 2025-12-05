@@ -375,7 +375,10 @@ def parse_arguments(
         "--prefetch-num-stages-options",
         type=lambda t: [int(s.strip()) for s in t.split(",")],
         default=[2],
-        help="Comma-separated list of allowed values for prefetch_num_stages pipeline option. Values: 0/1 = don't prefetch, 2 = default prefetch, 3 = new option.",
+        help="Comma-separated list of allowed values for prefetch_num_stages "
+        "pipeline option. Values: 0/1 = disable prefetching, 2 = two-stage "
+        "pipeline (default, combines read+write), 3 = three-stage pipeline "
+        "(separate read, write, compute stages).",
     )
     candidate_gen_args.add_argument(
         "--no-reduce-shared-memory-bank-conflicts-options",
