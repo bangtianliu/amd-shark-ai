@@ -9,13 +9,13 @@ Usage: python -m pytest common_test.py
 """
 
 import pytest
-from amdsharktuner import common
 from dataclasses import dataclass
 from types import SimpleNamespace
 
 from iree.compiler import ir  # type: ignore
-from iree.compiler.dialects import _builtin_ops_gen, iree_codegen, iree_gpu, transform  # type: ignore
+from iree.compiler.dialects import _builtin_ops_gen, func, iree_codegen, iree_gpu, linalg, transform  # type: ignore
 
+from amdsharktuner import common, dispatch_parser
 from amdsharktuner.test_utils import tuner_ctx
 
 
@@ -726,3 +726,58 @@ def test_get_padding_conv_sizes(tuner_ctx: common.TunerContext) -> None:
         conv_to_igemm_info=conv_to_igemm_info,
     )
     assert result is None
+
+    # TODO(Bangtian): Use this programmatic method to create operations instead of
+    # textual MLIR strings to fully cleanup the tests.
+    # Test with realistic convolution data from IGEMM.
+    conv_op = None
+    with ir.Location.unknown(tuner_ctx.mlir_ctx):
+        f16 = ir.F16Type.get()
+        f32 = ir.F32Type.get()
+
+        input_type = ir.RankedTensorType.get([2, 34, 34, 16], f16)
+        filter_type = ir.RankedTensorType.get([3, 3, 16, 32], f16)
+        output_type = ir.RankedTensorType.get([2, 32, 32, 32], f32)
+
+        @func.FuncOp.from_py_func(input_type, filter_type, output_type)
+        def conv_fn(input, filter, output):
+            nonlocal conv_op
+            result = linalg.conv_2d_nhwc_hwcf(input, filter, outs=[output])
+            conv_op = result.owner
+
+    assert conv_op is not None
+    convolution_dims = linalg.infer_convolution_dimensions(conv_op)
+    igemm_details = iree_codegen.get_igemm_generic_conv_details(conv_op)
+
+    input_type = conv_op.operands[0].type
+    res_maps = linalg.get_indexing_maps(conv_op)
+    indexing_maps = [map_attr.value for map_attr in res_maps]
+    input_map = indexing_maps[0]
+
+    conv_to_igemm_info = dispatch_parser.build_conv_to_igemm_info(
+        convolution_dims, input_type, input_map, igemm_details
+    )
+    assert conv_to_igemm_info is not None
+    assert conv_to_igemm_info.is_spatial_dim_last == False
+    assert conv_to_igemm_info.is_batch_dim_last == False
+
+    bounds = list(igemm_details.igemm_loop_bounds)
+    assert bounds == [2, 32, 32, 32, 144]
+
+    padding_sizes = [4, 64, 64, 64, 256]
+    igemm_iterator_types = [str(it) for it in igemm_details.igemm_loop_iterators]
+    assert igemm_iterator_types == [
+        '"parallel"',
+        '"parallel"',
+        '"parallel"',
+        '"parallel"',
+        '"reduction"',
+    ]
+
+    result = common.get_padding_conv_sizes(
+        bounds,
+        padding_sizes,
+        igemm_iterator_types,
+        conv_to_igemm_info,
+    )
+    assert result == [4, 64, 64, 64, 0, 0, 0]
