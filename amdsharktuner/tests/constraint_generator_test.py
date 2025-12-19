@@ -13,7 +13,7 @@ import pytest
 # TODO: remove after https://github.com/llvm/llvm-project/pull/117918 is resolved.
 import amdsharktuner
 from iree.compiler import ir  # type: ignore
-from iree.compiler.dialects import func, iree_codegen, iree_gpu, linalg  # type: ignore
+from iree.compiler.dialects import arith, func, iree_codegen, iree_gpu, linalg  # type: ignore
 
 from amdsharktuner import (
     common,
@@ -104,6 +104,145 @@ def build_func_with_conv2d_nhwc_hwcf(
                 result_tensors=[output_tensor_type],
             )
             conv_op.operation.attributes["root_op"] = ir.UnitAttr.get()
+
+
+def build_func_with_conv2d_nchw_fchw(
+    module: ir.Module,
+    input_shape: tuple[int, int, int, int],
+    kernel_shape: tuple[int, int, int, int],
+    output_shape: tuple[int, int, int, int],
+    input_type: ir.Type,
+    kernel_type: ir.Type,
+    output_type: ir.Type,
+) -> None:
+    input_tensor_type = ir.RankedTensorType.get(input_shape, input_type)
+    kernel_tensor_type = ir.RankedTensorType.get(kernel_shape, kernel_type)
+    output_tensor_type = ir.RankedTensorType.get(output_shape, output_type)
+
+    with ir.InsertionPoint(module.body):
+
+        @func.FuncOp.from_py_func(
+            input_tensor_type, kernel_tensor_type, output_tensor_type
+        )
+        def conv2d_func(arg0, arg1, arg2):
+            conv_op = linalg.Conv2DNchwFchwOp(
+                inputs=[arg0, arg1],
+                outputs=[arg2],
+                result_tensors=[output_tensor_type],
+            )
+            conv_op.operation.attributes["root_op"] = ir.UnitAttr.get()
+
+
+def build_func_with_conv2d_nhwc_fhwc(
+    module: ir.Module,
+    input_shape: tuple[int, int, int, int],
+    kernel_shape: tuple[int, int, int, int],
+    output_shape: tuple[int, int, int, int],
+    input_type: ir.Type,
+    kernel_type: ir.Type,
+    output_type: ir.Type,
+) -> None:
+    input_tensor_type = ir.RankedTensorType.get(input_shape, input_type)
+    kernel_tensor_type = ir.RankedTensorType.get(kernel_shape, kernel_type)
+    output_tensor_type = ir.RankedTensorType.get(output_shape, output_type)
+
+    with ir.InsertionPoint(module.body):
+
+        @func.FuncOp.from_py_func(
+            input_tensor_type, kernel_tensor_type, output_tensor_type
+        )
+        def conv2d_func(arg0, arg1, arg2):
+            # NHWC x FHWC: (d0, d1, d2, d3, d4, d5, d6).
+            # input: (d0, d1+d4, d2+d5, d6) - (N, H+kH, W+kW, C).
+            # filter: (d3, d4, d5, d6) - (F, kH, kW, C).
+            # output: (d0, d1, d2, d3) - (N, H, W, F).
+            d0, d1, d2, d3, d4, d5, d6 = [ir.AffineDimExpr.get(i) for i in range(7)]
+            input_map = ir.AffineMap.get(7, 0, [d0, d1 + d4, d2 + d5, d6])
+            kernel_map = ir.AffineMap.get(7, 0, [d3, d4, d5, d6])
+            output_map = ir.AffineMap.get(7, 0, [d0, d1, d2, d3])
+
+            generic_op = linalg.GenericOp(
+                result_tensors=[output_tensor_type],
+                inputs=[arg0, arg1],
+                outputs=[arg2],
+                indexing_maps=[input_map, kernel_map, output_map],
+                iterator_types=[
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.reduction,
+                    linalg.IteratorType.reduction,
+                    linalg.IteratorType.reduction,
+                ],
+            )
+            block = generic_op.regions[0].blocks.append(
+                input_type, kernel_type, output_type
+            )
+            with ir.InsertionPoint(block):
+                in0 = arith.ExtFOp(output_type, block.arguments[0]).result
+                in1 = arith.ExtFOp(output_type, block.arguments[1]).result
+                mul = arith.MulFOp(in0, in1).result
+                add = arith.AddFOp(block.arguments[2], mul).result
+                linalg.YieldOp([add])
+            generic_op.operation.attributes["root_op"] = ir.UnitAttr.get()
+
+
+def build_func_with_conv2d_chwn_chwf(
+    module: ir.Module,
+    input_shape: tuple[int, int, int, int],
+    kernel_shape: tuple[int, int, int, int],
+    output_shape: tuple[int, int, int, int],
+    input_type: ir.Type,
+    kernel_type: ir.Type,
+    output_type: ir.Type,
+) -> None:
+    input_tensor_type = ir.RankedTensorType.get(input_shape, input_type)
+    kernel_tensor_type = ir.RankedTensorType.get(kernel_shape, kernel_type)
+    output_tensor_type = ir.RankedTensorType.get(output_shape, output_type)
+
+    with ir.InsertionPoint(module.body):
+
+        @func.FuncOp.from_py_func(
+            input_tensor_type, kernel_tensor_type, output_tensor_type
+        )
+        def conv2d_func(arg0, arg1, arg2):
+            # CHWN x CHWF: (d0, d1, d2, d3, d4, d5, d6).
+            # d0=F, d1=oH, d2=oW, d3=N (parallel).
+            # d4=C, d5=kH, d6=kW (reduction).
+            # input: (d4, d1+d5, d2+d6, d3) - (C, H, W, N).
+            # filter: (d4, d5, d6, d0) - (C, kH, kW, F).
+            # output: (d0, d1, d2, d3) - (F, oH, oW, N).
+            d0, d1, d2, d3, d4, d5, d6 = [ir.AffineDimExpr.get(i) for i in range(7)]
+            input_map = ir.AffineMap.get(7, 0, [d4, d1 + d5, d2 + d6, d3])
+            kernel_map = ir.AffineMap.get(7, 0, [d4, d5, d6, d0])
+            output_map = ir.AffineMap.get(7, 0, [d0, d1, d2, d3])
+
+            generic_op = linalg.GenericOp(
+                result_tensors=[output_tensor_type],
+                inputs=[arg0, arg1],
+                outputs=[arg2],
+                indexing_maps=[input_map, kernel_map, output_map],
+                iterator_types=[
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.parallel,
+                    linalg.IteratorType.reduction,
+                    linalg.IteratorType.reduction,
+                    linalg.IteratorType.reduction,
+                ],
+            )
+            block = generic_op.regions[0].blocks.append(
+                input_type, kernel_type, output_type
+            )
+            with ir.InsertionPoint(block):
+                in0 = arith.ExtFOp(output_type, block.arguments[0]).result
+                in1 = arith.ExtFOp(output_type, block.arguments[1]).result
+                mul = arith.MulFOp(in0, in1).result
+                add = arith.AddFOp(block.arguments[2], mul).result
+                linalg.YieldOp([add])
+            generic_op.operation.attributes["root_op"] = ir.UnitAttr.get()
 
 
 def test_generate_solutions(
@@ -324,15 +463,17 @@ def test_generate_solutions_tile_and_fuse_conv_padding(
         op_info = parser.get_op_info()
         gen = constraint_generator.ConvolutionOpInterfaceConstraintGenerator(op_info)
 
+        # With IGEMM (default), dimensions are restructured to matmul-like form.
+        # K dimension is flattened: 3*3*128 = 1152.
         assert gen.op_info.dims.batch == []
         assert gen.op_info.dims.m == [0, 1, 2]
         assert gen.op_info.dims.n == [3]
-        assert gen.op_info.dims.k == [4, 5, 6]
+        assert gen.op_info.dims.k == [4]
 
         assert gen.op_info.matmul_size.B == []
         assert gen.op_info.matmul_size.M == [2, 62, 62]
         assert gen.op_info.matmul_size.N == [256]
-        assert gen.op_info.matmul_size.K == [3, 3, 128]
+        assert gen.op_info.matmul_size.K == [1152]
 
         assert gen.op_info.lhs_type.shape == [2, 64, 64, 128]
         assert gen.op_info.rhs_type.shape == [3, 3, 128, 256]
@@ -366,7 +507,6 @@ def test_generate_solutions_tile_and_fuse_conv_padding(
 def test_generate_solutions_tile_and_fuse_conv_small_unaligned(
     tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
 ) -> None:
-    """Test TileAndFuse with small dimensions (< 32) unaligned to intrinsics."""
     context = tuner_ctx.mlir_ctx
     f16 = tuner_ctx.type.f16
     f32 = tuner_ctx.type.f32
@@ -395,15 +535,16 @@ def test_generate_solutions_tile_and_fuse_conv_small_unaligned(
         op_info = parser.get_op_info()
         gen = constraint_generator.ConvolutionOpInterfaceConstraintGenerator(op_info)
 
+        # With IGEMM (default), dimensions are restructured to matmul-like form.
+        # K dimension is flattened: 3*3*32 = 288.
         assert gen.op_info.dims.batch == []
         assert gen.op_info.dims.m == [0, 1, 2]
         assert gen.op_info.dims.n == [3]
-        assert gen.op_info.dims.k == [4, 5, 6]
-
+        assert gen.op_info.dims.k == [4]
         assert gen.op_info.matmul_size.B == []
         assert gen.op_info.matmul_size.M == [2, 5, 5]
         assert gen.op_info.matmul_size.N == [64]
-        assert gen.op_info.matmul_size.K == [3, 3, 32]
+        assert gen.op_info.matmul_size.K == [288]
 
         assert gen.op_info.lhs_type.shape == [2, 7, 7, 32]
         assert gen.op_info.rhs_type.shape == [3, 3, 32, 64]
@@ -432,6 +573,165 @@ def test_generate_solutions_tile_and_fuse_conv_small_unaligned(
             assert "padding =" in str(lowering_config)
             promote = [int(x) for x in lowering_config.attributes["promote_operands"]]
             assert promote == [0, 1]
+
+
+def test_generate_solutions_tile_and_fuse_conv_nchw_fchw(
+    tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
+) -> None:
+    context = tuner_ctx.mlir_ctx
+    f16 = tuner_ctx.type.f16
+    f32 = tuner_ctx.type.f32
+
+    input_shape = (2, 128, 34, 34)
+    kernel_shape = (256, 128, 3, 3)
+    output_shape = (2, 256, 32, 32)
+
+    with ir.Location.unknown(context):
+        module = ir.Module.create()
+        build_func_with_conv2d_nchw_fchw(
+            module=module,
+            input_shape=input_shape,
+            kernel_shape=kernel_shape,
+            output_shape=output_shape,
+            input_type=f16,
+            kernel_type=f16,
+            output_type=f32,
+        )
+
+        root_ops = iree_codegen.get_tuner_root_ops(module)
+        assert len(root_ops) == 1
+        root_op = root_ops[0]
+
+        parser = dispatch_parser.ConvolutionOpInterfaceParser(root_op, tuner_ctx)
+        op_info = parser.get_op_info()
+        gen = constraint_generator.ConvolutionOpInterfaceConstraintGenerator(op_info)
+
+        assert gen.op_info.lhs_type.shape == [2, 128, 34, 34]
+        assert gen.op_info.rhs_type.shape == [256, 128, 3, 3]
+        assert gen.op_info.res_type.shape == [2, 256, 32, 32]
+        assert gen.op_info.matmul_size.K == [1152]
+
+        solutions = list(
+            gen.generate_solutions(
+                tuner_context=tuner_ctx,
+                gpu_target_info=gpu_target_info,
+                codegen_pipeline=iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse,
+                num_subgroups=4,
+            )
+        )
+
+        assert len(solutions) > 0, "No solutions generated for NCHW_FCHW conv."
+        for solution in solutions:
+            assert len(solution) == 1
+            config = solution[0]
+            assert isinstance(config, common.TuningConfiguration)
+            assert isinstance(config.configuration, iree_codegen.CompilationInfoAttr)
+
+
+def test_generate_solutions_tile_and_fuse_conv_nhwc_fhwc(
+    tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
+) -> None:
+    context = tuner_ctx.mlir_ctx
+    f16 = tuner_ctx.type.f16
+    f32 = tuner_ctx.type.f32
+
+    input_shape = (2, 10, 10, 32)
+    kernel_shape = (64, 3, 3, 32)
+    output_shape = (2, 8, 8, 64)
+
+    with ir.Location.unknown(context):
+        module = ir.Module.create()
+        build_func_with_conv2d_nhwc_fhwc(
+            module=module,
+            input_shape=input_shape,
+            kernel_shape=kernel_shape,
+            output_shape=output_shape,
+            input_type=f16,
+            kernel_type=f16,
+            output_type=f32,
+        )
+
+        root_ops = iree_codegen.get_tuner_root_ops(module)
+        assert len(root_ops) == 1
+        root_op = root_ops[0]
+
+        parser = dispatch_parser.ConvolutionOpInterfaceParser(root_op, tuner_ctx)
+        op_info = parser.get_op_info()
+        gen = constraint_generator.ConvolutionOpInterfaceConstraintGenerator(op_info)
+
+        assert gen.op_info.lhs_type.shape == [2, 10, 10, 32]
+        assert gen.op_info.rhs_type.shape == [64, 3, 3, 32]
+        assert gen.op_info.res_type.shape == [2, 8, 8, 64]
+        assert gen.op_info.matmul_size.K == [288]
+
+        solutions = list(
+            gen.generate_solutions(
+                tuner_context=tuner_ctx,
+                gpu_target_info=gpu_target_info,
+                codegen_pipeline=iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse,
+                num_subgroups=4,
+            )
+        )
+
+        assert len(solutions) > 0, "No solutions generated for NHWC_FHWC conv."
+        for solution in solutions:
+            assert len(solution) == 1
+            config = solution[0]
+            assert isinstance(config, common.TuningConfiguration)
+            assert isinstance(config.configuration, iree_codegen.CompilationInfoAttr)
+
+
+def test_generate_solutions_tile_and_fuse_conv_chwn_chwf(
+    tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
+) -> None:
+    context = tuner_ctx.mlir_ctx
+    f16 = tuner_ctx.type.f16
+    f32 = tuner_ctx.type.f32
+
+    input_shape = (32, 10, 10, 2)
+    kernel_shape = (32, 3, 3, 64)
+    output_shape = (64, 8, 8, 2)
+
+    with ir.Location.unknown(context):
+        module = ir.Module.create()
+        build_func_with_conv2d_chwn_chwf(
+            module=module,
+            input_shape=input_shape,
+            kernel_shape=kernel_shape,
+            output_shape=output_shape,
+            input_type=f16,
+            kernel_type=f16,
+            output_type=f32,
+        )
+
+        root_ops = iree_codegen.get_tuner_root_ops(module)
+        assert len(root_ops) == 1
+        root_op = root_ops[0]
+
+        parser = dispatch_parser.ConvolutionOpInterfaceParser(root_op, tuner_ctx)
+        op_info = parser.get_op_info()
+        gen = constraint_generator.ConvolutionOpInterfaceConstraintGenerator(op_info)
+
+        assert gen.op_info.lhs_type.shape == [32, 10, 10, 2]
+        assert gen.op_info.rhs_type.shape == [32, 3, 3, 64]
+        assert gen.op_info.res_type.shape == [64, 8, 8, 2]
+        assert gen.op_info.matmul_size.K == [288]
+
+        solutions = list(
+            gen.generate_solutions(
+                tuner_context=tuner_ctx,
+                gpu_target_info=gpu_target_info,
+                codegen_pipeline=iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse,
+                num_subgroups=4,
+            )
+        )
+
+        assert len(solutions) > 0, "No solutions generated for CHWN_CHWF conv."
+        for solution in solutions:
+            assert len(solution) == 1
+            config = solution[0]
+            assert isinstance(config, common.TuningConfiguration)
+            assert isinstance(config.configuration, iree_codegen.CompilationInfoAttr)
 
 
 def test_generate_solutions_tile_and_fuse_matmul_small_unaligned(
