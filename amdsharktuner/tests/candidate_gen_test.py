@@ -234,7 +234,12 @@ def test_set_dispatch_tuner_with_matvec(tuner_ctx: common.TunerContext) -> None:
     ir_module = ir.Module.parse(module_str, context)
 
     # Should return None since mat-vec has invalid dimensions (M=[]).
-    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx)
+    dispatch_tuners: list[type[candidate_gen.DispatchTuner]] = [
+        candidate_gen.ContractionOpInterfaceTuner,
+        candidate_gen.IGEMMConvolutionTuner,
+        candidate_gen.AttentionOpInterfaceTuner,
+    ]
+    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx, dispatch_tuners)
     assert result is None
 
 
@@ -253,7 +258,12 @@ def test_set_dispatch_tuner_no_root_op(tuner_ctx: common.TunerContext) -> None:
     ir_module = ir.Module.parse(module_str, context)
 
     # Should return None since no root_op is found.
-    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx)
+    dispatch_tuners: list[type[candidate_gen.DispatchTuner]] = [
+        candidate_gen.ContractionOpInterfaceTuner,
+        candidate_gen.IGEMMConvolutionTuner,
+        candidate_gen.AttentionOpInterfaceTuner,
+    ]
+    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx, dispatch_tuners)
     assert result is None
 
 
@@ -275,5 +285,10 @@ def test_set_dispatch_tuner_multiple_root_ops(tuner_ctx: common.TunerContext) ->
     ir_module = ir.Module.parse(module_str, context)
 
     # Should return None since multiple root_ops are found.
-    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx)
+    dispatch_tuners: list[type[candidate_gen.DispatchTuner]] = [
+        candidate_gen.ContractionOpInterfaceTuner,
+        candidate_gen.IGEMMConvolutionTuner,
+        candidate_gen.AttentionOpInterfaceTuner,
+    ]
+    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx, dispatch_tuners)
     assert result is None

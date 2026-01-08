@@ -430,14 +430,14 @@ def test_compute_rocprof_avg_kernel_time(caplog):
 def test_get_conv_lowering_strategy_for_pipeline() -> None:
     assert (
         libtuner.get_conv_lowering_strategy_for_pipeline(
-            libtuner.CodegenPipelines.llvmgpu_tile_and_fuse
+            common.CodegenPipelines.llvmgpu_tile_and_fuse
         )
         == common.ConvLoweringStrategy.IGEMM
     )
 
     assert (
         libtuner.get_conv_lowering_strategy_for_pipeline(
-            libtuner.CodegenPipelines.llvmgpu_vector_distribute
+            common.CodegenPipelines.llvmgpu_vector_distribute
         )
         == common.ConvLoweringStrategy.INNER_MNK
     )

@@ -125,18 +125,6 @@ class ContractionOpInterfaceTuner(
 class ConvolutionOpInterfaceTunerBase(DispatchTuner):
     """Base class for convolution tuners. Subclasses use specific lowering strategies."""
 
-    @classmethod
-    def get_tuner_for_strategy(
-        cls, strategy: common.ConvLoweringStrategy
-    ) -> type["ConvolutionOpInterfaceTunerBase"]:
-        strategy_to_tuner: dict[
-            common.ConvLoweringStrategy, type[ConvolutionOpInterfaceTunerBase]
-        ] = {
-            common.ConvLoweringStrategy.IGEMM: IGEMMConvolutionTuner,
-            common.ConvLoweringStrategy.INNER_MNK: InnerMNKConvolutionTuner,
-        }
-        return strategy_to_tuner[strategy]
-
     def get_op_info(self) -> dispatch_parser.ConvolutionOpInfo:
         assert isinstance(
             self._op_info, dispatch_parser.ConvolutionOpInfo
@@ -240,14 +228,8 @@ class AttentionOpInterfaceTuner(
 def set_dispatch_tuner(
     input_module: ir.Module,
     tuner_ctx: common.TunerContext,
-    conv_lowering_strategy: common.ConvLoweringStrategy = common.ConvLoweringStrategy.IGEMM,
+    dispatch_tuners: list[type[DispatchTuner]],
 ) -> Optional[DispatchTuner]:
-    dispatch_tuners: list[type[DispatchTuner]] = [
-        ContractionOpInterfaceTuner,
-        ConvolutionOpInterfaceTunerBase.get_tuner_for_strategy(conv_lowering_strategy),
-        AttentionOpInterfaceTuner,
-    ]
-
     root_op_list = iree_codegen.get_tuner_root_ops(input_module)
     if len(root_op_list) == 0:
         tune_logger.error(

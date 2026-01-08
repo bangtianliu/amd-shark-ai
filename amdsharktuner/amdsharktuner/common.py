@@ -46,6 +46,11 @@ class CommonTypes:
         return ir.ArrayAttr.get([self.getI64(x) for x in values])
 
 
+class CodegenPipelines(str, Enum):
+    llvmgpu_vector_distribute = "llvmgpu_vector_distribute"
+    llvmgpu_tile_and_fuse = "llvmgpu_tile_and_fuse"
+
+
 class ConvLoweringStrategy(Enum):
     """Convolution lowering strategy for code generation.
 
