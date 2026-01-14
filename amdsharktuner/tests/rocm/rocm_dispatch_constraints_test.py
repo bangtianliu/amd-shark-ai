@@ -4,10 +4,6 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-"""
-Usage: python -m pytest tests/rocm/rocm_dispatch_constraints_test.py
-"""
-
 import pytest
 import z3  # type: ignore
 
