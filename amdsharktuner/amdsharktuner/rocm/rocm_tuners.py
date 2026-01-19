@@ -239,3 +239,26 @@ class ROCmAttentionVectorDistributeTuner(
         config_list: list[common.TuningConfiguration],
     ) -> Optional[common.KnobAssignment]:
         return None
+
+
+def get_tuners_for_pipeline(
+    codegen_pipeline: iree_codegen.DispatchLoweringPassPipeline,
+) -> list[type[tuner_base.DispatchTuner]]:
+    """Get ROCm tuners for the given codegen pipeline."""
+    if (
+        codegen_pipeline
+        == iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute
+    ):
+        return [
+            ROCmContractionVectorDistributeTuner,
+            ROCmConvolutionVectorDistributeTuner,
+            ROCmAttentionVectorDistributeTuner,
+        ]
+
+    if codegen_pipeline == iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse:
+        return [
+            ROCmContractionTileAndFuseTuner,
+            ROCmConvolutionTileAndFuseTuner,
+        ]
+
+    return []

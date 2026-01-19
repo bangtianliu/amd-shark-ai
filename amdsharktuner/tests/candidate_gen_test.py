@@ -222,7 +222,7 @@ def test_get_td_spec_convolution(tuner_ctx: common.TunerContext) -> None:
     )
 
 
-def test_set_dispatch_tuner_with_matvec(tuner_ctx: common.TunerContext) -> None:
+def test_instantiate_dispatch_tuner_with_matvec(tuner_ctx: common.TunerContext) -> None:
     # Make sure we do not crash on unsupported root ops (matvec).
     context = tuner_ctx.mlir_ctx
     module_str = """
@@ -239,14 +239,16 @@ def test_set_dispatch_tuner_with_matvec(tuner_ctx: common.TunerContext) -> None:
     ir_module = ir.Module.parse(module_str, context)
 
     # Should return None since mat-vec has invalid dimensions (M=[]).
-    dispatch_tuners = candidate_gen.get_dispatch_tuners(
+    dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
         "gfx942", iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute
     )
-    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx, dispatch_tuners)
+    result = candidate_gen.instantiate_dispatch_tuner(
+        ir_module, tuner_ctx, dispatch_tuners
+    )
     assert result is None
 
 
-def test_set_dispatch_tuner_with_unsupported_conv(
+def test_instantiate_dispatch_tuner_with_unsupported_conv(
     tuner_ctx: common.TunerContext,
 ) -> None:
     # Make sure we do not crash on unsupported conv layouts (nchw_fchw).
@@ -267,14 +269,16 @@ def test_set_dispatch_tuner_with_unsupported_conv(
     ir_module = ir.Module.parse(module_str, context)
 
     # Should return None since conv with nchw_fchw layout is not supported.
-    dispatch_tuners = candidate_gen.get_dispatch_tuners(
+    dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
         "gfx942", iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute
     )
-    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx, dispatch_tuners)
+    result = candidate_gen.instantiate_dispatch_tuner(
+        ir_module, tuner_ctx, dispatch_tuners
+    )
     assert result is None
 
 
-def test_set_dispatch_tuner_no_root_op(tuner_ctx: common.TunerContext) -> None:
+def test_instantiate_dispatch_tuner_no_root_op(tuner_ctx: common.TunerContext) -> None:
     context = tuner_ctx.mlir_ctx
     module_str = """
         builtin.module{
@@ -289,14 +293,18 @@ def test_set_dispatch_tuner_no_root_op(tuner_ctx: common.TunerContext) -> None:
     ir_module = ir.Module.parse(module_str, context)
 
     # Should return None since no root_op is found.
-    dispatch_tuners = candidate_gen.get_dispatch_tuners(
+    dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
         "gfx942", iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute
     )
-    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx, dispatch_tuners)
+    result = candidate_gen.instantiate_dispatch_tuner(
+        ir_module, tuner_ctx, dispatch_tuners
+    )
     assert result is None
 
 
-def test_set_dispatch_tuner_multiple_root_ops(tuner_ctx: common.TunerContext) -> None:
+def test_instantiate_dispatch_tuner_multiple_root_ops(
+    tuner_ctx: common.TunerContext,
+) -> None:
     context = tuner_ctx.mlir_ctx
     module_str = """
         builtin.module{
@@ -314,17 +322,19 @@ def test_set_dispatch_tuner_multiple_root_ops(tuner_ctx: common.TunerContext) ->
     ir_module = ir.Module.parse(module_str, context)
 
     # Should return None since multiple root_ops are found.
-    dispatch_tuners = candidate_gen.get_dispatch_tuners(
+    dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
         "gfx942", iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute
     )
-    result = candidate_gen.set_dispatch_tuner(ir_module, tuner_ctx, dispatch_tuners)
+    result = candidate_gen.instantiate_dispatch_tuner(
+        ir_module, tuner_ctx, dispatch_tuners
+    )
     assert result is None
 
 
-def test_get_dispatch_tuners() -> None:
+def test_get_supported_dispatch_tuners() -> None:
     Pipeline = iree_codegen.DispatchLoweringPassPipeline
 
-    assert candidate_gen.get_dispatch_tuners(
+    assert candidate_gen.get_supported_dispatch_tuners(
         "gfx942", Pipeline.LLVMGPUVectorDistribute
     ) == [
         rocm_tuners.ROCmContractionVectorDistributeTuner,
@@ -332,13 +342,22 @@ def test_get_dispatch_tuners() -> None:
         rocm_tuners.ROCmAttentionVectorDistributeTuner,
     ]
 
-    assert candidate_gen.get_dispatch_tuners("gfx942", Pipeline.LLVMGPUTileAndFuse) == [
+    assert candidate_gen.get_supported_dispatch_tuners(
+        "gfx942", Pipeline.LLVMGPUTileAndFuse
+    ) == [
         rocm_tuners.ROCmContractionTileAndFuseTuner,
         rocm_tuners.ROCmConvolutionTileAndFuseTuner,
     ]
 
     assert (
-        candidate_gen.get_dispatch_tuners("sm_80", Pipeline.LLVMGPUVectorDistribute)
+        candidate_gen.get_supported_dispatch_tuners(
+            "sm_80", Pipeline.LLVMGPUVectorDistribute
+        )
         == []
     )
-    assert candidate_gen.get_dispatch_tuners("gfx942", Pipeline.LLVMGPUDistribute) == []
+    assert (
+        candidate_gen.get_supported_dispatch_tuners(
+            "gfx942", Pipeline.LLVMGPUDistribute
+        )
+        == []
+    )

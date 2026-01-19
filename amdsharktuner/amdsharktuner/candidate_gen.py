@@ -26,11 +26,11 @@ from .tuner_base import DispatchTuner
 tune_logger = logging.getLogger("tune")
 
 
-def get_dispatch_tuners(
+def get_supported_dispatch_tuners(
     target_arch: str,
     codegen_pipeline: iree_codegen.DispatchLoweringPassPipeline,
 ) -> list[type[DispatchTuner]]:
-    """Get dispatch tuners for the given target architecture and pipeline."""
+    """Get supported dispatch tuners for the given target architecture and pipeline."""
     # TODO(Bangtian): Use `target.getBackend() == "rocm"` once backend name is exposed
     # in TargetInfo. Currently using "gfx" prefix matching as a workaround.
     is_rocm_arch = target_arch.startswith("gfx")
@@ -50,29 +50,11 @@ def get_dispatch_tuners(
             f"Proceeding with tuning anyway."
         )
 
-    if (
-        codegen_pipeline
-        == iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute
-    ):
-        return [
-            rocm_tuners.ROCmContractionVectorDistributeTuner,
-            rocm_tuners.ROCmConvolutionVectorDistributeTuner,
-            rocm_tuners.ROCmAttentionVectorDistributeTuner,
-        ]
-
-    if codegen_pipeline == iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse:
-        return [
-            rocm_tuners.ROCmContractionTileAndFuseTuner,
-            rocm_tuners.ROCmConvolutionTileAndFuseTuner,
-        ]
-
-    tune_logger.warning(
-        f"Unsupported codegen pipeline '{codegen_pipeline}' for ROCm tuning."
-    )
-    return []
+    # Get tuners for ROCm backend.
+    return rocm_tuners.get_tuners_for_pipeline(codegen_pipeline)
 
 
-def set_dispatch_tuner(
+def instantiate_dispatch_tuner(
     input_module: ir.Module,
     tuner_ctx: common.TunerContext,
     dispatch_tuners: list[type[DispatchTuner]],

@@ -890,11 +890,11 @@ def generate_candidate_specs(
         tuning_client.target_info = common.get_target_info(mlir_module)
         assert tuning_client.target_info, "Failed to query target info."
 
-        dispatch_tuners = candidate_gen.get_dispatch_tuners(
+        dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
             tuning_client.target_info.arch,
             get_iree_codegen_pipeline(args.codegen_pipeline),
         )
-        dispatch_tuner = candidate_gen.set_dispatch_tuner(
+        dispatch_tuner = candidate_gen.instantiate_dispatch_tuner(
             input_module=mlir_module,
             tuner_ctx=tuning_client.tuner_context,
             dispatch_tuners=dispatch_tuners,
