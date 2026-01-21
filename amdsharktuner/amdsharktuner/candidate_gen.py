@@ -45,7 +45,7 @@ def get_supported_dispatch_tuners(
     # logic may still work even if we haven't validated it.
     if target_arch not in rocm_common.ROCM_ARCHITECTURES:
         tune_logger.warning(
-            f"Target architecture '{target_arch}' is not in the tested list. "
+            f"Target architecture '{target_arch}' is not tested. "
             f"Tested ROCm architectures: {rocm_common.ROCM_ARCHITECTURES}. "
             f"Proceeding with tuning anyway."
         )

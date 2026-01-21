@@ -15,6 +15,16 @@ from . import rocm_solutions
 class ROCmContractionVectorDistributeConstraintGenerator(
     constraint_generator.ConstraintGenerator
 ):
+    """
+    ROCm Constraint generator for contraction operations using VectorDistribute pipeline.
+
+    Generates tuning configurations for matrix multiplication and related contraction
+    operations using the LLVMGPUVectorDistribute lowering pipeline.
+
+    Attributes:
+        op_info: ContractionOpInfo containing all contraction operation metadata.
+    """
+
     def __init__(self, op_info: dispatch_parser.ContractionOpInfo):
         self.op_info = op_info
 
@@ -42,6 +52,16 @@ class ROCmContractionVectorDistributeConstraintGenerator(
 class ROCmConvolutionVectorDistributeConstraintGenerator(
     constraint_generator.ConstraintGenerator
 ):
+    """
+    ROCm Constraint generator for convolution operations using VectorDistribute pipeline.
+
+    Generates tuning configurations for convolution operations using the
+    LLVMGPUVectorDistribute lowering pipeline. Supports IGEMM-based convolutions.
+
+    Attributes:
+        op_info: ConvolutionOpInfo containing all convolution operation metadata.
+    """
+
     def __init__(self, op_info: dispatch_parser.ConvolutionOpInfo):
         self.op_info = op_info
 
@@ -73,6 +93,16 @@ class ROCmConvolutionVectorDistributeConstraintGenerator(
 class ROCmContractionTileAndFuseConstraintGenerator(
     constraint_generator.ConstraintGenerator
 ):
+    """
+    ROCm Constraint generator for contraction operations using TileAndFuse pipeline.
+
+    Generates tuning configurations for matrix multiplication and related contraction
+    operations using the LLVMGPUTileAndFuse lowering pipeline.
+
+    Attributes:
+        op_info: ContractionOpInfo containing all contraction operation metadata.
+    """
+
     def __init__(self, op_info: dispatch_parser.ContractionOpInfo):
         self.op_info = op_info
 
@@ -100,6 +130,16 @@ class ROCmContractionTileAndFuseConstraintGenerator(
 class ROCmConvolutionTileAndFuseConstraintGenerator(
     constraint_generator.ConstraintGenerator
 ):
+    """
+    ROCm Constraint generator for convolution operations using TileAndFuse pipeline.
+
+    Generates tuning configurations for convolution operations using the
+    LLVMGPUTileAndFuse lowering pipeline. Supports IGEMM-based convolutions.
+
+    Attributes:
+        op_info: ConvolutionOpInfo containing all convolution operation metadata.
+    """
+
     def __init__(self, op_info: dispatch_parser.ConvolutionOpInfo):
         self.op_info = op_info
 
@@ -130,7 +170,7 @@ class ROCmAttentionVectorDistributeConstraintGenerator(
     constraint_generator.ConstraintGenerator
 ):
     """
-    Rocm Constraint generator for the IREE LinalgExt AttentionOp.
+    ROCm Constraint generator for the IREE LinalgExt AttentionOp.
 
     Generates tuning configurations for attention operations.
 

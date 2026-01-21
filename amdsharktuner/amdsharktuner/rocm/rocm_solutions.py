@@ -33,38 +33,34 @@ def adjust_problem_size_for_pipeline(
 
     pipeline_options_search_space.use_igemm_convolution = [True]
 
-    # Use IGEMM binding details if available for accurate dimension mapping.
-    if igemm_details:
-        igemm_maps = [
-            map_attr.value for map_attr in igemm_details.igemm_contraction_maps
-        ]
-        igemm_contraction_dims = linalg.infer_contraction_dimensions_from_maps(
-            igemm_maps
-        )
-        assert (
-            igemm_contraction_dims
-        ), "Failed to infer contraction dimensions from IGEMM maps"
-
-        bounds = list(igemm_details.igemm_loop_bounds)
-
-        # Update contraction_dims with IGEMM structure.
-        contraction_dims.m = list(igemm_contraction_dims.m)
-        contraction_dims.n = list(igemm_contraction_dims.n)
-        contraction_dims.k = list(igemm_contraction_dims.k)
-        contraction_dims.batch = list(igemm_contraction_dims.batch)
-
-        # Update matmul_size with IGEMM loop bounds (K is already flattened!).
-        matmul_size.M = [bounds[i] for i in contraction_dims.m]
-        matmul_size.N = [bounds[i] for i in contraction_dims.n]
-        matmul_size.K = [bounds[i] for i in contraction_dims.k]
-        matmul_size.B = [bounds[i] for i in contraction_dims.batch]
-        return
-
     # Fallback: Manual flattening for legacy path when IGEMM details are unavailable.
     # TODO(Bangtian): Once all IGEMM implementation is complete, fully remove this fallback path
     # and corresponding tests.
-    contraction_dims.k = [contraction_dims.k[0]]
-    matmul_size.K = [math.prod(matmul_size.K)]
+    if not igemm_details:
+        contraction_dims.k = [contraction_dims.k[0]]
+        matmul_size.K = [math.prod(matmul_size.K)]
+        return
+
+    # Use IGEMM binding details for accurate dimension mapping.
+    igemm_maps = [map_attr.value for map_attr in igemm_details.igemm_contraction_maps]
+    igemm_contraction_dims = linalg.infer_contraction_dimensions_from_maps(igemm_maps)
+    assert (
+        igemm_contraction_dims
+    ), "Failed to infer contraction dimensions from IGEMM maps"
+
+    bounds = list(igemm_details.igemm_loop_bounds)
+
+    # Update contraction_dims with IGEMM structure.
+    contraction_dims.m = list(igemm_contraction_dims.m)
+    contraction_dims.n = list(igemm_contraction_dims.n)
+    contraction_dims.k = list(igemm_contraction_dims.k)
+    contraction_dims.batch = list(igemm_contraction_dims.batch)
+
+    # Update matmul_size with IGEMM loop bounds (K is already flattened!).
+    matmul_size.M = [bounds[i] for i in contraction_dims.m]
+    matmul_size.N = [bounds[i] for i in contraction_dims.n]
+    matmul_size.K = [bounds[i] for i in contraction_dims.k]
+    matmul_size.B = [bounds[i] for i in contraction_dims.batch]
 
 
 def generate_generic_contraction_z3_constraints(

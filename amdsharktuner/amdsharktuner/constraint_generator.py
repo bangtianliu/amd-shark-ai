@@ -212,7 +212,7 @@ class ConstraintPayload:
 class ConstraintGenerator(ABC):
     """
     Describes how to generate constraints and produce tuning candidates
-    for a specific type of tunable problem.
+    for a specific type of a tunable problem.
 
     Implementations of ConstraintGenerator are responsible for encapsulating
     problem-specific information—such as contraction dimensions, sizes, operand types—
