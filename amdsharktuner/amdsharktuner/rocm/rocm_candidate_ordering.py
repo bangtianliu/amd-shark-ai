@@ -10,7 +10,7 @@ from typing import Callable
 
 from iree.compiler.dialects import iree_gpu  # type: ignore
 
-from .. import candidate_ordering, common
+from amdsharktuner import candidate_ordering, common
 from . import rocm_common
 
 
