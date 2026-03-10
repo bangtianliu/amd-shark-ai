@@ -12,25 +12,26 @@ from dataclasses import dataclass
 from typing import Optional
 
 from iree.compiler import ir  # type: ignore
-from iree.compiler._mlir_libs._mlir.ir import _OperationBase  # type: ignore
 from iree.compiler.dialects import func, iree_codegen, linalg  # type: ignore
 
 from . import common
 
 
-def get_parent_function_name(root_op: ir.Operation) -> str:
+def get_parent_function_name(root_op: ir.Operation) -> Optional[str]:
     """
     Returns the parent function's symbol name from a root operation.
     Walks up the operation hierarchy to find the enclosing func.func.
-    """
-    current_op: Optional[_OperationBase] = root_op.parent
-    while current_op:
-        op_view = current_op.opview
-        if isinstance(op_view, func.FuncOp):
-            return ir.StringAttr(op_view.name).value
-        current_op = current_op.parent
+    Returns None if no enclosing func.func is found.
 
-    raise RuntimeError(f"No enclosing func.func found for operation {root_op.name}")
+    TODO(bangtian): This could be simplified once MLIR Python bindings support getParentOfType<T>().
+    See https://github.com/llvm/llvm-project/pull/185512.
+    """
+    op: ir.Operation = root_op
+    while op := op.parent:
+        if isinstance(op.opview, func.FuncOp):
+            return ir.StringAttr(op.opview.name).value
+
+    return None
 
 
 def parse_mlir(mlir_text: str, ctx: common.TunerContext) -> ir.Module:
