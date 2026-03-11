@@ -191,6 +191,7 @@ def generate_generic_contraction_solutions(
     )
     z3_solutions_list = [x for sublist in z3_solutions_list for x in sublist]
 
+    logged_padding_intrinsics = set()
     for z3_assignment in z3_solutions_list:
         intrinsic_mnk_shape = (
             z3_assignment.intrinsic_mn,
@@ -210,9 +211,11 @@ def generate_generic_contraction_solutions(
             p[-1] % i != 0 for p, i in zip((M, N, K), intrinsic_mnk_shape, strict=True)
         )
         if required_padding:
-            tuner_ctx.logger.debug(
-                f"Required padding detected: M={M}, N={N}, K={K}, intrinsic_shape={intrinsic_mnk_shape}"
-            )
+            if intrinsic_mnk_shape not in logged_padding_intrinsics:
+                logged_padding_intrinsics.add(intrinsic_mnk_shape)
+                tuner_ctx.logger.debug(
+                    f"Required padding detected: M={M}, N={N}, K={K}, intrinsic_shape={intrinsic_mnk_shape}"
+                )
 
         def set_cdim_tile_sizes(tile_sizes, contraction_dims, csizes):
             for dim, size in zip(contraction_dims, csizes):
