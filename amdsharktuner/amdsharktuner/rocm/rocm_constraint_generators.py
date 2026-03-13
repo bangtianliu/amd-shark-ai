@@ -9,7 +9,49 @@ from typing import Iterator
 from iree.compiler.dialects import iree_codegen, iree_gpu  # type: ignore
 
 from .. import common, constraint_generator, dispatch_parser
-from . import rocm_common, rocm_parsers, rocm_solutions
+from . import rocm_common, rocm_dispatch_constraints, rocm_parsers, rocm_solutions
+
+
+def _validate_and_filter_use_direct_load(
+    tuner_context: common.TunerContext,
+    pipeline_constraint_options: dict,
+) -> dict:
+    """Filter out use_direct_load=True if no_reduce_shared_memory_bank_conflicts != [True]."""
+    # Check if use_direct_load is present and has any True values.
+    allowed_use_direct_load = pipeline_constraint_options.get(
+        "allowed_use_direct_load", [False]
+    )
+    if not any(opt is True for opt in allowed_use_direct_load):
+        # No use_direct_load=True, return unchanged.
+        return pipeline_constraint_options
+
+    # Check if no_reduce_shared_memory_bank_conflicts is correctly set.
+    pipeline_options = pipeline_constraint_options.get(
+        "pipeline_options_search_space",
+        rocm_dispatch_constraints.PipelineOptionsSearchSpace(),
+    )
+
+    no_reduce_bank_conflicts = pipeline_options.no_reduce_shared_memory_bank_conflicts
+
+    # Validate: use_direct_load=True requires no_reduce_shared_memory_bank_conflicts=[True].
+    # If not set correctly, warn and filter out use_direct_load=True.
+    if no_reduce_bank_conflicts != [True]:
+        tuner_context.logger.warning(
+            f"use_direct_load=True requires no_reduce_shared_memory_bank_conflicts=[True], "
+            f"but got {no_reduce_bank_conflicts}. Skipping use_direct_load=True configurations. "
+            f"To use Global Load DMA, set no_reduce_shared_memory_bank_conflicts=[True]."
+        )
+
+        # Filter out use_direct_load=True from allowed values.
+        options = pipeline_constraint_options.copy()
+        filtered_use_direct_load = [
+            opt for opt in allowed_use_direct_load if opt is False
+        ]
+        options["allowed_use_direct_load"] = filtered_use_direct_load
+        return options
+
+    # Configuration is valid, return unchanged.
+    return pipeline_constraint_options
 
 
 class ROCmContractionVectorDistributeConstraintGenerator(
@@ -34,6 +76,11 @@ class ROCmContractionVectorDistributeConstraintGenerator(
         gpu_target_info: iree_gpu.TargetInfo,
         **pipeline_constraint_options,
     ) -> Iterator[list[common.TuningConfiguration]]:
+        # Validate use_direct_load configurations before constraint generation.
+        options = _validate_and_filter_use_direct_load(
+            tuner_context, pipeline_constraint_options
+        )
+
         return rocm_solutions.generate_generic_contraction_solutions(
             tuner_ctx=tuner_context,
             gpu_target_info=gpu_target_info,
@@ -45,7 +92,7 @@ class ROCmContractionVectorDistributeConstraintGenerator(
             dispatch_kind=common.DispatchKind.contraction,
             indexing_maps=self.op_info.indexing_maps,
             codegen_pipeline=iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute,
-            **pipeline_constraint_options,
+            **options,
         )
 
 
@@ -76,6 +123,10 @@ class ROCmConvolutionVectorDistributeConstraintGenerator(
             self.op_info.convolution_dims is not None
         ), "convolution_dims must be set for convolution operations"
 
+        options = _validate_and_filter_use_direct_load(
+            tuner_context, pipeline_constraint_options
+        )
+
         # TODO(Bangtian): Simplify the function signature to accept op_info directly instead of
         # unpacking all individual fields.
         return rocm_solutions.generate_generic_contraction_solutions(
@@ -92,7 +143,7 @@ class ROCmConvolutionVectorDistributeConstraintGenerator(
             igemm_details=self.op_info.igemm_details,
             conv_to_igemm_info=self.op_info.conv_to_igemm_info,
             convolution_dims=self.op_info.convolution_dims,
-            **pipeline_constraint_options,
+            **options,
         )
 
 
@@ -118,6 +169,11 @@ class ROCmContractionTileAndFuseConstraintGenerator(
         gpu_target_info: iree_gpu.TargetInfo,
         **pipeline_constraint_options,
     ) -> Iterator[list[common.TuningConfiguration]]:
+        # Validate use_direct_load configurations before constraint generation.
+        options = _validate_and_filter_use_direct_load(
+            tuner_context, pipeline_constraint_options
+        )
+
         return rocm_solutions.generate_generic_contraction_solutions(
             tuner_ctx=tuner_context,
             gpu_target_info=gpu_target_info,
@@ -129,7 +185,7 @@ class ROCmContractionTileAndFuseConstraintGenerator(
             dispatch_kind=common.DispatchKind.contraction,
             indexing_maps=self.op_info.indexing_maps,
             codegen_pipeline=iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse,
-            **pipeline_constraint_options,
+            **options,
         )
 
 
@@ -169,6 +225,12 @@ class ROCmConvolutionTileAndFuseConstraintGenerator(
             tuner_context.logger.info(
                 "Generating convolution candidates using IGEMM strategy"
             )
+
+            # Validate use_direct_load configurations before constraint generation.
+            igemm_options = _validate_and_filter_use_direct_load(
+                tuner_context, pipeline_constraint_options
+            )
+
             yield from rocm_solutions.generate_generic_contraction_solutions(
                 tuner_ctx=tuner_context,
                 gpu_target_info=gpu_target_info,
@@ -183,7 +245,7 @@ class ROCmConvolutionTileAndFuseConstraintGenerator(
                 igemm_details=self.op_info.igemm_details,
                 conv_to_igemm_info=self.op_info.conv_to_igemm_info,
                 convolution_dims=self.op_info.convolution_dims,
-                **pipeline_constraint_options,
+                **igemm_options,
             )
 
         # Generate direct convolution candidates if supported.
@@ -192,6 +254,25 @@ class ROCmConvolutionTileAndFuseConstraintGenerator(
                 tuner_context.logger.info(
                     "Generating convolution candidates using direct strategy"
                 )
+
+                # Direct convolution does NOT support use_direct_load (Global Load DMA).
+                # Only IGEMM convolution supports DMA-based loading.
+                # Filter out use_direct_load=True before constraint generation.
+                # See IREE: setDirectConvolutionLoweringConfig doesn't take clUseDirectLoad parameter.
+                direct_options = pipeline_constraint_options.copy()
+                if "allowed_use_direct_load" in direct_options:
+                    original_use_direct_load = direct_options["allowed_use_direct_load"]
+                    filtered_use_direct_load = [
+                        opt for opt in original_use_direct_load if opt is False
+                    ]
+                    if len(filtered_use_direct_load) < len(original_use_direct_load):
+                        tuner_context.logger.warning(
+                            "use_direct_load=True is not supported for direct convolution strategy. "
+                            "Only IGEMM convolution supports Global Load DMA. "
+                            "Skipping use_direct_load=True configurations for direct convolution."
+                        )
+                    direct_options["allowed_use_direct_load"] = filtered_use_direct_load
+
                 direct_dims, direct_sizes = self._compute_direct_conv_dimensions()
                 # Pass filter loop info so solution generator can add them with tile size 1.
                 direct_conv_info: rocm_solutions.DirectConvInfo = {
@@ -214,7 +295,7 @@ class ROCmConvolutionTileAndFuseConstraintGenerator(
                     igemm_details=None,
                     conv_to_igemm_info=None,
                     direct_conv_info=direct_conv_info,
-                    **pipeline_constraint_options,
+                    **direct_options,
                 )
 
     def _supports_direct_convolution(self, tuner_context: common.TunerContext) -> bool:

@@ -757,34 +757,65 @@ def generate_tile_and_fuse_compilation_infos(
     padding: Optional[list[int]] = None,
     padding_conv: Optional[list[int]] = None,
     allowed_denorm_flushing: list[bool] = [False],
+    allowed_use_direct_load: list[bool] = [False],
 ) -> list[iree_codegen.CompilationInfoAttr]:
     """Generate compilation infos for LLVMGPUTileAndFuse pipeline."""
-    lowering_config_args = {
-        "workgroup": workgroup_tile_sizes,
-        "reduction": reduction_tile_sizes,
-        "subgroup": subgroup_tile_sizes,
-        "promote_operands": promote_operands,
-    }
+    all_compilation_infos: list[iree_codegen.CompilationInfoAttr] = []
 
-    if mma_attr is not None:
-        lowering_config_args["mma_kind"] = mma_attr
+    for use_direct_load in allowed_use_direct_load:
+        lowering_config_args = {
+            "workgroup": workgroup_tile_sizes,
+            "reduction": reduction_tile_sizes,
+            "subgroup": subgroup_tile_sizes,
+            "promote_operands": promote_operands,
+        }
 
-    if padding is not None:
-        lowering_config_args["padding"] = padding
+        # Add promotion_types when use_direct_load is enabled.
+        # Note: use_direct_load (Global Load DMA) is only supported for:
+        # - Matmul operations (use_igemm_convolution = None)
+        # - IGEMM convolution (use_igemm_convolution = True)
+        # NOT supported for direct convolution (use_igemm_convolution = False).
+        if use_direct_load:
+            # Defensive check: direct convolution should never reach here with use_direct_load=True
+            # as it's filtered earlier in the constraint generator.
+            is_direct_conv = (
+                pipeline_options_search_space.use_igemm_convolution is not None
+                and pipeline_options_search_space.use_igemm_convolution == [False]
+            )
+            assert not is_direct_conv, (
+                "use_direct_load=True should not be used with direct convolution "
+                "(use_igemm_convolution=False). This should have been filtered earlier "
+                "in ROCmConvolutionTileAndFuseConstraintGenerator."
+            )
+            lowering_config_args[
+                "promotion_types"
+            ] = rocm_common.get_promotion_types_for_direct_load(len(promote_operands))
 
-    if padding_conv is not None:
-        lowering_config_args["padding_conv"] = padding_conv
+        if mma_attr is not None:
+            lowering_config_args["mma_kind"] = mma_attr
 
-    return _build_compilation_infos(
-        tuner_ctx,
-        lowering_config_args,
-        workgroup_sizes,
-        subgroup_size,
-        iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse,
-        pipeline_options_search_space,
-        allowed_waves_per_eu,
-        allowed_denorm_flushing,
-    )
+        if padding is not None:
+            lowering_config_args["padding"] = padding
+
+        if padding_conv is not None:
+            lowering_config_args["padding_conv"] = padding_conv
+
+        # Note: When use_direct_load=True, the user must set no_reduce_shared_memory_bank_conflicts=[True]
+        # in pipeline_options_search_space. Invalid combinations are filtered out in the constraint
+        # generators (see _validate_and_filter_use_direct_load in rocm_constraint_generators.py).
+        compilation_infos = _build_compilation_infos(
+            tuner_ctx,
+            lowering_config_args,
+            workgroup_sizes,
+            subgroup_size,
+            iree_codegen.DispatchLoweringPassPipeline.LLVMGPUTileAndFuse,
+            pipeline_options_search_space,
+            allowed_waves_per_eu,
+            allowed_denorm_flushing,
+        )
+        all_compilation_infos.extend(compilation_infos)
+
+    return all_compilation_infos
 
 
 def generate_vector_distribute_compilation_infos(
@@ -802,32 +833,48 @@ def generate_vector_distribute_compilation_infos(
     padding: Optional[list[int]] = None,
     padding_conv: Optional[list[int]] = None,
     allowed_denorm_flushing: list[bool] = [False],
+    allowed_use_direct_load: list[bool] = [False],
 ) -> list[iree_codegen.CompilationInfoAttr]:
     """Generate compilation infos for LLVMGPUVectorDistribute pipeline."""
-    subgroup_basis = [subgroup_basis_counts, subgroup_basis_mapping]
-    lowering_config_args = {
-        "workgroup": workgroup_tile_sizes,
-        "reduction": reduction_tile_sizes,
-        "subgroup_basis": subgroup_basis,
-        "promote_operands": promote_operands,
-    }
+    all_compilation_infos: list[iree_codegen.CompilationInfoAttr] = []
 
-    if mma_attr is not None:
-        lowering_config_args["mma_kind"] = mma_attr
+    for use_direct_load in allowed_use_direct_load:
+        subgroup_basis = [subgroup_basis_counts, subgroup_basis_mapping]
+        lowering_config_args = {
+            "workgroup": workgroup_tile_sizes,
+            "reduction": reduction_tile_sizes,
+            "subgroup_basis": subgroup_basis,
+            "promote_operands": promote_operands,
+        }
 
-    if padding is not None:
-        lowering_config_args["padding"] = padding
+        # Add promotion_types when use_direct_load is enabled.
+        if use_direct_load:
+            lowering_config_args[
+                "promotion_types"
+            ] = rocm_common.get_promotion_types_for_direct_load(len(promote_operands))
 
-    if padding_conv is not None:
-        lowering_config_args["padding_conv"] = padding_conv
+        if mma_attr is not None:
+            lowering_config_args["mma_kind"] = mma_attr
 
-    return _build_compilation_infos(
-        tuner_ctx,
-        lowering_config_args,
-        workgroup_sizes,
-        subgroup_size,
-        iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute,
-        pipeline_options_search_space,
-        allowed_waves_per_eu,
-        allowed_denorm_flushing,
-    )
+        if padding is not None:
+            lowering_config_args["padding"] = padding
+
+        if padding_conv is not None:
+            lowering_config_args["padding_conv"] = padding_conv
+
+        # Note: When use_direct_load=True, the user must set no_reduce_shared_memory_bank_conflicts=[True]
+        # in pipeline_options_search_space. Invalid combinations are filtered out in the constraint
+        # generators (see _validate_and_filter_use_direct_load in rocm_constraint_generators.py).
+        compilation_infos = _build_compilation_infos(
+            tuner_ctx,
+            lowering_config_args,
+            workgroup_sizes,
+            subgroup_size,
+            iree_codegen.DispatchLoweringPassPipeline.LLVMGPUVectorDistribute,
+            pipeline_options_search_space,
+            allowed_waves_per_eu,
+            allowed_denorm_flushing,
+        )
+        all_compilation_infos.extend(compilation_infos)
+
+    return all_compilation_infos

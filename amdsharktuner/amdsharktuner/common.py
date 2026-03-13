@@ -337,6 +337,24 @@ def get_lowering_config(
                     assert (
                         False
                     ), f"Unsupported type for key '{key}': {type(value).__name__}"
+            case "promotion_types":
+                # Handle list of Attribute objects for use_direct_load.
+                if isinstance(value, Sequence):
+                    # Validate length matches promote_operands if present.
+                    if "promote_operands" in lowering_config_dict:
+                        promote_ops = lowering_config_dict["promote_operands"]
+                        if hasattr(promote_ops, "__len__") and len(value) != len(
+                            promote_ops
+                        ):
+                            assert False, (
+                                f"promotion_types length ({len(value)}) must match "
+                                f"promote_operands length ({len(promote_ops)})"
+                            )
+                    promoted_value = ir.ArrayAttr.get(list(value))
+                elif not isinstance(value, ir.ArrayAttr):
+                    assert (
+                        False
+                    ), f"Unsupported type for key '{key}': {type(value).__name__}"
             case _:
                 assert False, f"Unhandled key in lowering configuration: {key}"
 

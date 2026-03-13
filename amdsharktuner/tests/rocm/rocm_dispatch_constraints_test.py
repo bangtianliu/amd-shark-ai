@@ -591,3 +591,126 @@ def test_generate_vector_distribute_compilation_infos(
     assert (
         "mma_kind = #iree_gpu.mma_layout<MFMA_F32_16x16x16_F16>" in compilation_info_str
     )
+
+
+def test_use_direct_load_tile_and_fuse_compilation_infos(
+    tuner_ctx: common.TunerContext, mma_attr: iree_gpu.MMAAttr
+) -> None:
+    """Test that use_direct_load generates correct compilation infos for TileAndFuse."""
+    workgroup_tile_sizes = [128, 128, 0]
+    reduction_tile_sizes = [0, 0, 32]
+    subgroup_tile_sizes = [32, 32, 0]
+
+    compilation_infos = rocm_dispatch_constraints.generate_tile_and_fuse_compilation_infos(
+        tuner_ctx=tuner_ctx,
+        mma_attr=mma_attr,
+        workgroup_tile_sizes=workgroup_tile_sizes,
+        reduction_tile_sizes=reduction_tile_sizes,
+        subgroup_tile_sizes=subgroup_tile_sizes,
+        workgroup_sizes=(256, 1, 1),
+        subgroup_size=64,
+        promote_operands=[0, 1],
+        pipeline_options_search_space=rocm_dispatch_constraints.PipelineOptionsSearchSpace(),
+        allowed_waves_per_eu=[2],
+        allowed_use_direct_load=[False, True],  # Should produce 2x variants
+    )
+
+    # Should have 2 variants (one for each use_direct_load value).
+    assert len(compilation_infos) == 2
+
+    # First variant should NOT have promotion_types.
+    config_str_0 = str(compilation_infos[0].lowering_config)
+    assert "promotion_types" not in config_str_0
+
+    # Second variant should have promotion_types with DMA attributes.
+    config_str_1 = str(compilation_infos[1].lowering_config)
+    assert "promotion_types" in config_str_1
+    assert "#iree_gpu.use_global_load_dma" in config_str_1
+    # Should have 2 DMA attributes (one for each operand in promote_operands=[0, 1]).
+    assert config_str_1.count("#iree_gpu.use_global_load_dma") == 2
+
+    # Second variant should force no_reduce_shared_memory_bank_conflicts=True.
+    translation_info_1 = compilation_infos[1].translation_info
+    pipeline_opts_str = str(translation_info_1.configuration)
+    assert "no_reduce_shared_memory_bank_conflicts = true" in pipeline_opts_str
+
+
+def test_use_direct_load_assertion_for_direct_convolution(
+    tuner_ctx: common.TunerContext, mma_attr: iree_gpu.MMAAttr
+) -> None:
+    """Test that use_direct_load=True with direct convolution triggers defensive assertion."""
+    workgroup_tile_sizes = [128, 128, 0]
+    reduction_tile_sizes = [0, 0, 32]
+    subgroup_tile_sizes = [32, 32, 0]
+
+    # Create pipeline options for direct convolution (use_igemm_convolution=False).
+    direct_conv_pipeline_options = rocm_dispatch_constraints.PipelineOptionsSearchSpace(
+        use_igemm_convolution=[False]  # Direct convolution
+    )
+
+    # This should trigger an assertion because use_direct_load=True is not supported
+    # for direct convolution (use_igemm_convolution=False).
+    with pytest.raises(AssertionError) as exc_info:
+        rocm_dispatch_constraints.generate_tile_and_fuse_compilation_infos(
+            tuner_ctx=tuner_ctx,
+            mma_attr=mma_attr,
+            workgroup_tile_sizes=workgroup_tile_sizes,
+            reduction_tile_sizes=reduction_tile_sizes,
+            subgroup_tile_sizes=subgroup_tile_sizes,
+            workgroup_sizes=(256, 1, 1),
+            subgroup_size=64,
+            promote_operands=[0, 1],
+            pipeline_options_search_space=direct_conv_pipeline_options,
+            allowed_waves_per_eu=[2],
+            allowed_use_direct_load=[True],  # Should trigger assertion
+        )
+
+    # Verify the error message explains the issue.
+    assert "use_direct_load=True should not be used with direct convolution" in str(
+        exc_info.value
+    )
+    assert "use_igemm_convolution=False" in str(exc_info.value)
+
+
+def test_use_direct_load_vector_distribute_compilation_infos(
+    tuner_ctx: common.TunerContext, mma_attr: iree_gpu.MMAAttr
+) -> None:
+    """Test that use_direct_load generates correct compilation infos for VectorDistribute."""
+    workgroup_tile_sizes = [128, 128, 0]
+    reduction_tile_sizes = [0, 0, 32]
+    subgroup_basis_counts = [1, 4, 1]
+    subgroup_basis_mapping = [0, 1, 2]
+
+    compilation_infos = rocm_dispatch_constraints.generate_vector_distribute_compilation_infos(
+        tuner_ctx=tuner_ctx,
+        mma_attr=mma_attr,
+        workgroup_tile_sizes=workgroup_tile_sizes,
+        reduction_tile_sizes=reduction_tile_sizes,
+        subgroup_basis_counts=subgroup_basis_counts,
+        subgroup_basis_mapping=subgroup_basis_mapping,
+        workgroup_sizes=(256, 1, 1),
+        subgroup_size=64,
+        promote_operands=[0, 1],
+        pipeline_options_search_space=rocm_dispatch_constraints.PipelineOptionsSearchSpace(),
+        allowed_waves_per_eu=[2],
+        allowed_use_direct_load=[False, True],  # Should produce 2x variants
+    )
+
+    # Should have 2 variants (one for each use_direct_load value).
+    assert len(compilation_infos) == 2
+
+    # First variant should NOT have promotion_types.
+    config_str_0 = str(compilation_infos[0].lowering_config)
+    assert "promotion_types" not in config_str_0
+
+    # Second variant should have promotion_types with DMA attributes.
+    config_str_1 = str(compilation_infos[1].lowering_config)
+    assert "promotion_types" in config_str_1
+    assert "#iree_gpu.use_global_load_dma" in config_str_1
+    # Should have 2 DMA attributes (one for each operand in promote_operands=[0, 1]).
+    assert config_str_1.count("#iree_gpu.use_global_load_dma") == 2
+
+    # Second variant should force no_reduce_shared_memory_bank_conflicts=True.
+    translation_info_1 = compilation_infos[1].translation_info
+    pipeline_opts_str = str(translation_info_1.configuration)
+    assert "no_reduce_shared_memory_bank_conflicts = true" in pipeline_opts_str

@@ -133,6 +133,73 @@ def test_get_lowering_config(tuner_ctx: common.TunerContext) -> None:
     assert lowering_config.subgroup_basis == ([1, 1, 1], [0, 1, 2])
 
 
+def test_get_lowering_config_with_promotion_types(
+    tuner_ctx: common.TunerContext,
+) -> None:
+    """Test that promotion_types is correctly included in lowering config for use_direct_load."""
+    promotion_types = rocm_common.get_promotion_types_for_direct_load(2)
+
+    lowering_config = common.get_lowering_config(
+        tuner_ctx=tuner_ctx,
+        workgroup=[128, 128, 0],
+        reduction=[0, 0, 32],
+        subgroup=[32, 32, 0],
+        promote_operands=[0, 1],
+        promotion_types=promotion_types,
+    )
+
+    config_str = str(lowering_config)
+    # Verify the lowering config contains the expected attributes.
+    assert "promote_operands = [0, 1]" in config_str
+    assert "promotion_types = [#iree_gpu.use_global_load_dma" in config_str
+    assert config_str.count("#iree_gpu.use_global_load_dma") == 2
+
+
+def test_get_lowering_config_promotion_types_length_mismatch(
+    tuner_ctx: common.TunerContext,
+) -> None:
+    """Test that promotion_types length must match promote_operands length."""
+    # Create 2 DMA attributes but provide 3 promote_operands - should fail.
+    promotion_types = rocm_common.get_promotion_types_for_direct_load(2)
+
+    with pytest.raises(AssertionError) as exc_info:
+        common.get_lowering_config(
+            tuner_ctx=tuner_ctx,
+            workgroup=[128, 128, 0],
+            reduction=[0, 0, 32],
+            subgroup=[32, 32, 0],
+            promote_operands=[0, 1, 2],  # 3 operands.
+            promotion_types=promotion_types,  # 2 DMA attributes.
+        )
+
+    # Verify the error message is helpful.
+    assert "promotion_types length (2) must match promote_operands length (3)" in str(
+        exc_info.value
+    )
+
+
+def test_get_lowering_config_promotion_types_empty_operands(
+    tuner_ctx: common.TunerContext,
+) -> None:
+    """Test that promotion_types works correctly with empty promote_operands."""
+    # Create 0 DMA attributes for empty promote_operands list.
+    promotion_types = rocm_common.get_promotion_types_for_direct_load(0)
+
+    # Should work fine with both empty.
+    lowering_config = common.get_lowering_config(
+        tuner_ctx=tuner_ctx,
+        workgroup=[128, 128, 0],
+        reduction=[0, 0, 32],
+        subgroup=[32, 32, 0],
+        promote_operands=[],
+        promotion_types=promotion_types,
+    )
+
+    # Verify empty promotion_types is accepted.
+    config_str = str(lowering_config)
+    assert "promote_operands = []" in config_str
+
+
 def test_combine_tuning_specs(tuner_ctx: common.TunerContext) -> None:
     context = tuner_ctx.mlir_ctx
     first_module_str = """
