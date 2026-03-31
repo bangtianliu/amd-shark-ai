@@ -639,12 +639,13 @@ def getMMAAttr(
     lhs_type: ir.IntegerType | ir.FloatType,
     rhs_type: ir.IntegerType | ir.FloatType,
     mma_intrinsics: list[iree_gpu.MMAIntrinsic | iree_gpu.VirtualMMAIntrinsic],
+    col_major: bool = False,
 ) -> iree_gpu.MMAAttr | iree_gpu.VirtualMMAAttr:
     for mma_intrinsic in mma_intrinsics:
         if isinstance(mma_intrinsic, iree_gpu.MMAIntrinsic):
-            mma_attr = iree_gpu.MMAAttr.get(mma_intrinsic)
+            mma_attr = iree_gpu.MMAAttr.get(mma_intrinsic, col_major)
         else:
-            mma_attr = iree_gpu.VirtualMMAAttr.get(mma_intrinsic)
+            mma_attr = iree_gpu.VirtualMMAAttr.get(mma_intrinsic, col_major)
 
         a_type, b_type, c_type = mma_attr.abc_element_types
         mnk = mma_attr.mnk_shape
@@ -666,7 +667,7 @@ def getMMAAttr(
     raise ValueError(
         f"No matching MMA intrinsic found for "
         f"output_type={output_type}, lhs_type={lhs_type}, rhs_type={rhs_type}, "
-        f"m={m}, n={n}, k={k}."
+        f"m={m}, n={n}, k={k}, col_major={col_major}."
     )
 
 

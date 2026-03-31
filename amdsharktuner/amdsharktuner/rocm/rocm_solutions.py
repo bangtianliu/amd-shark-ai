@@ -509,6 +509,11 @@ def generate_attention_solutions(
         def lookup(var):
             return model[var].as_long()
 
+        # Determine if layouts match to set col_major on MMA attrs.
+        # When QK output layout matches PV input layout, using col_major
+        # eliminates the conflict between chained MMA in attention.
+        layouts_match = bool(model[can_reuse_qk_output_for_pv_input])
+
         qk_intrinsic_mnk_shape = (
             lookup(qk_intrinsic_mn),
             lookup(qk_intrinsic_mn),
@@ -520,6 +525,7 @@ def generate_attention_solutions(
             op_info.qk_matmul.lhs_type,
             op_info.qk_matmul.rhs_type,
             gpu_target_info.mma_intrinsics,
+            col_major=layouts_match,
         )
 
         pv_intrinsic_mnk_shape = (
@@ -533,6 +539,7 @@ def generate_attention_solutions(
             op_info.pv_matmul.lhs_type,
             op_info.pv_matmul.rhs_type,
             gpu_target_info.mma_intrinsics,
+            col_major=layouts_match,
         )
 
         # Get workgroup tile sizes.
@@ -594,7 +601,6 @@ def generate_attention_solutions(
         # Set prefetch_num_stages based on whether layouts match.
         # 0/1 = disable prefetching, 2 = two-stage pipeline (default),
         # 3 = three-stage pipeline (separate read, write, compute stages).
-        layouts_match = bool(model[can_reuse_qk_output_for_pv_input])
         pipeline_options_search_space.prefetch_num_stages = [2 if layouts_match else 0]
 
         promote_operands = [0, 1, 2]

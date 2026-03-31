@@ -168,6 +168,16 @@ def test_generate_attention_solutions(
         )
         assert isinstance(config_list[1].configuration, ir.DictAttr)
 
+        # Verify marker attributes are not present (removed per IREE PR #23633).
+        decomp_str = str(config_list[1].configuration)
+        assert "attention_qk_matmul" not in decomp_str
+        assert "attention_pv_matmul" not in decomp_str
+
+        # Verify col_major is set consistently with prefetch_num_stages.
+        # When layouts match: col_major=true on MMA attrs, prefetch=2.
+        # When layouts don't match: no col_major on MMA attrs, prefetch=0.
+        has_col_major = "col_major = true" in decomp_str
+
         # Verify that prefetch_num_stages is set based on layout matching.
         compilation_info = config_list[0].configuration
         translation_info = compilation_info.translation_info
@@ -179,6 +189,19 @@ def test_generate_attention_solutions(
             assert isinstance(
                 pipeline_options.prefetch_num_stages, int
             ), "prefetch_num_stages must be explicitly set to an int"
+
+            # col_major and prefetch_num_stages must be consistent:
+            # layouts match => col_major=true, prefetch=2
+            # layouts don't match => no col_major, prefetch=0
+            prefetch = pipeline_options.prefetch_num_stages
+            if has_col_major:
+                assert (
+                    prefetch == 2
+                ), f"col_major=true requires prefetch_num_stages=2, got {prefetch}"
+            else:
+                assert (
+                    prefetch == 0
+                ), f"col_major=false requires prefetch_num_stages=0, got {prefetch}"
 
 
 def test_generate_solutions_tile_and_fuse_contraction_padding(
