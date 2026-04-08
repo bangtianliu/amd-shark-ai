@@ -173,9 +173,9 @@ def test_generate_attention_solutions(
         assert "attention_qk_matmul" not in decomp_str
         assert "attention_pv_matmul" not in decomp_str
 
-        # Verify col_major is set consistently with prefetch_num_stages.
-        # When layouts match: col_major=true on MMA attrs, prefetch=2.
-        # When layouts don't match: no col_major on MMA attrs, prefetch=0.
+        # Verify col_major is derived from use_col_major (QK acc matches PV RHS).
+        # This is separate from can_reuse_qk_output_for_pv_input which drives
+        # prefetch (QK acc matches either PV LHS or RHS).
         has_col_major = "col_major = true" in decomp_str
 
         # Verify that prefetch_num_stages is set based on layout matching.
@@ -190,18 +190,14 @@ def test_generate_attention_solutions(
                 pipeline_options.prefetch_num_stages, int
             ), "prefetch_num_stages must be explicitly set to an int"
 
-            # col_major and prefetch_num_stages must be consistent:
-            # layouts match => col_major=true, prefetch=2
-            # layouts don't match => no col_major, prefetch=0
+            # col_major implies prefetch is enabled (RHS match is a subset of
+            # LHS-or-RHS match), but prefetch can be enabled without col_major
+            # (when only LHS matches).
             prefetch = pipeline_options.prefetch_num_stages
             if has_col_major:
                 assert (
                     prefetch == 2
-                ), f"col_major=true requires prefetch_num_stages=2, got {prefetch}"
-            else:
-                assert (
-                    prefetch == 0
-                ), f"col_major=false requires prefetch_num_stages=0, got {prefetch}"
+                ), f"col_major=true implies layout reuse, so prefetch=2, got {prefetch}"
 
 
 def test_generate_solutions_tile_and_fuse_contraction_padding(

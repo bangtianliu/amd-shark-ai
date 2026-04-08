@@ -476,6 +476,7 @@ def generate_attention_vector_distribute_constraints(
     subgroup_m_count: z3.ArithRef,
     subgroup_n_count: z3.ArithRef,
     can_reuse_qk_output_for_pv_input: z3.BoolRef,
+    use_col_major: z3.BoolRef,
     gpu_target_info: iree_gpu.TargetInfo,
 ):
     m_tile, n_tile, k_tile = tile_sizes
@@ -542,8 +543,14 @@ def generate_attention_vector_distribute_constraints(
     subgroup_n_tile_count = z3.Int("sg_n_tcnt")
     subgroup_k_tile_count = z3.Int("sg_k_tcnt")
 
-    can_reuse_lhs = match_layout(qk_mma_acc_layout, pv_mma_lhs_layout)
     can_reuse_rhs = match_layout(qk_mma_acc_layout, pv_mma_rhs_layout)
+    # use_col_major: QK acc matches PV RHS layout, so col_major can redirect
+    # P to PV's RHS port for direct register reuse (per IREE PR #23633).
+    constraints += [use_col_major == can_reuse_rhs]
+    # can_reuse_qk_output_for_pv_input: QK acc matches either PV LHS or RHS,
+    # used for shared memory estimation (if either matches, PV LHS doesn't
+    # need its own allocation).
+    can_reuse_lhs = match_layout(qk_mma_acc_layout, pv_mma_lhs_layout)
     constraints += [
         can_reuse_qk_output_for_pv_input == z3.Or(can_reuse_lhs, can_reuse_rhs)
     ]
