@@ -158,6 +158,7 @@ class DispatchKind(Enum):
     conv = 0
     contraction = 1
     attention = 2
+    matvec = 3
 
 
 @dataclass
