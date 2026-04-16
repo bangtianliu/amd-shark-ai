@@ -375,6 +375,55 @@ def test_instantiate_dispatch_tuner_multiple_root_ops(
     assert result is None
 
 
+def test_generate_candidates_for_matvec(tuner_ctx: common.TunerContext) -> None:
+    context = tuner_ctx.mlir_ctx
+    module_str = """
+        builtin.module{
+            func.func @test(%A: tensor<4096x4096xf16>, %x: tensor<4096xf16>) -> tensor<4096xf32> {
+                %cst = arith.constant 0.0 : f32
+                %init = tensor.empty() : tensor<4096xf32>
+                %fill = linalg.fill ins(%cst : f32) outs(%init : tensor<4096xf32>) -> tensor<4096xf32>
+                %y = linalg.matvec {root_op = #iree_codegen.root_op<set = 0>}
+                    ins(%A, %x : tensor<4096x4096xf16>, tensor<4096xf16>)
+                    outs(%fill : tensor<4096xf32>) -> tensor<4096xf32>
+                return %y : tensor<4096xf32>
+            }
+        }"""
+    ir_module = ir.Module.parse(module_str, context)
+
+    dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
+        "gfx942", iree_gpu.LoweringPipeline.VectorDistribute
+    )
+    tuner = candidate_gen.instantiate_dispatch_tuner(
+        ir_module, tuner_ctx, dispatch_tuners
+    )
+    assert tuner is not None
+
+    target_info = iree_gpu.TargetInfo(
+        context=context,
+        arch="gfx942",
+        subgroup_size_choices=[64],
+        max_workgroup_sizes=[1024, 1024, 1024],
+        max_thread_count_per_workgroup=1024,
+        max_workgroup_memory_bytes=65536,
+        workgroup_count=304,
+        simds_per_workgroup=4,
+        mma_intrinsics=[iree_gpu.MMAIntrinsic.MFMA_F32_16x16x16_F16],
+    )
+
+    results = list(
+        candidate_gen.generate_solutions(
+            dispatch_tuner=tuner,
+            target_info=target_info,
+            tuner_context=tuner_ctx,
+            num_subgroups=4,
+        )
+    )
+    assert len(results) >= 1
+    for config_list in results:
+        assert config_list[0].name == "compilation_info"
+
+
 def test_get_supported_dispatch_tuners() -> None:
     Pipeline = iree_gpu.LoweringPipeline
 
