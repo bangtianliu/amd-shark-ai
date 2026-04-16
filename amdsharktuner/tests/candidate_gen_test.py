@@ -229,7 +229,6 @@ def test_get_td_spec_convolution(tuner_ctx: common.TunerContext) -> None:
 
 
 def test_instantiate_dispatch_tuner_with_matvec(tuner_ctx: common.TunerContext) -> None:
-    # Make sure we do not crash on unsupported root ops (matvec).
     context = tuner_ctx.mlir_ctx
     module_str = """
         builtin.module{
@@ -241,17 +240,56 @@ def test_instantiate_dispatch_tuner_with_matvec(tuner_ctx: common.TunerContext) 
                 return %y : tensor<8xf32>
             }
         }"""
-
     ir_module = ir.Module.parse(module_str, context)
-
-    # Should return None since mat-vec has invalid dimensions (M=[]).
     dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
         "gfx942", iree_gpu.LoweringPipeline.VectorDistribute
     )
     result = candidate_gen.instantiate_dispatch_tuner(
         ir_module, tuner_ctx, dispatch_tuners
     )
-    assert result is None
+    assert result is not None
+    assert isinstance(result, rocm_tuners.ROCmMatvecVectorDistributeTuner)
+    assert result.get_dispatch_kind() == common.DispatchKind.matvec
+
+
+def test_contraction_tuner_still_rejects_matvec(tuner_ctx: common.TunerContext) -> None:
+    context = tuner_ctx.mlir_ctx
+    module_str = """
+        builtin.module{
+            func.func @test(%A: tensor<8x224xf32>, %x: tensor<224xf32>) -> tensor<8xf32> {
+                %init = tensor.empty() : tensor<8xf32>
+                %y = linalg.matvec {root_op = #iree_codegen.root_op<set = 0>}
+                    ins(%A, %x : tensor<8x224xf32>, tensor<224xf32>)
+                    outs(%init : tensor<8xf32>) -> tensor<8xf32>
+                return %y : tensor<8xf32>
+            }
+        }"""
+    ir_module = ir.Module.parse(module_str, context)
+    root_op = iree_codegen.get_tuner_root_ops(ir_module)[0]
+    assert not rocm_tuners.ROCmContractionVectorDistributeTuner.supports_root_op(root_op)
+
+
+def test_matvec_tuner_rejects_full_matmul(tuner_ctx: common.TunerContext) -> None:
+    context = tuner_ctx.mlir_ctx
+    module_str = """
+        #map = affine_map<(d0, d1, d2) -> (d0, d2)>
+        #map1 = affine_map<(d0, d1, d2) -> (d1, d2)>
+        #map2 = affine_map<(d0, d1, d2) -> (d0, d1)>
+        builtin.module{
+            func.func @test(%A: tensor<128x256xf16>, %B: tensor<512x256xf16>) -> tensor<128x512xf32> {
+                %cst = arith.constant 0.0 : f32
+                %0 = tensor.empty() : tensor<128x512xf32>
+                %1 = linalg.fill ins(%cst : f32) outs(%0 : tensor<128x512xf32>) -> tensor<128x512xf32>
+                %2 = linalg.matmul indexing_maps = [#map, #map1, #map2]
+                    {root_op = #iree_codegen.root_op<set = 0>}
+                    ins(%A, %B : tensor<128x256xf16>, tensor<512x256xf16>)
+                    outs(%1 : tensor<128x512xf32>) -> tensor<128x512xf32>
+                return %2 : tensor<128x512xf32>
+            }
+        }"""
+    ir_module = ir.Module.parse(module_str, context)
+    root_op = iree_codegen.get_tuner_root_ops(ir_module)[0]
+    assert not rocm_tuners.ROCmMatvecVectorDistributeTuner.supports_root_op(root_op)
 
 
 def test_instantiate_dispatch_tuner_with_unsupported_conv(
@@ -343,6 +381,7 @@ def test_get_supported_dispatch_tuners() -> None:
     assert candidate_gen.get_supported_dispatch_tuners(
         "gfx942", Pipeline.VectorDistribute
     ) == [
+        rocm_tuners.ROCmMatvecVectorDistributeTuner,
         rocm_tuners.ROCmContractionVectorDistributeTuner,
         rocm_tuners.ROCmConvolutionVectorDistributeTuner,
         rocm_tuners.ROCmAttentionVectorDistributeTuner,
