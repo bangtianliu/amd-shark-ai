@@ -886,3 +886,36 @@ def generate_vector_distribute_compilation_infos(
         allowed_waves_per_eu,
         allowed_denorm_flushing,
     )
+
+
+def generate_matvec_vector_distribute_compilation_infos(
+    tuner_ctx: common.TunerContext,
+    workgroup_tile_sizes: list[int],
+    partial_reduction_tile_sizes: list[int],
+    thread_tile_sizes: list[int],
+    lane_basis: list[list[int]],
+    subgroup_basis: list[list[int]],
+    workgroup_size: int,
+    subgroup_size: int,
+) -> iree_codegen.CompilationInfoAttr:
+    """Build a CompilationInfoAttr for a single matvec VectorDistribute candidate."""
+    lowering_config = common.get_lowering_config(
+        tuner_ctx,
+        workgroup=workgroup_tile_sizes,
+        partial_reduction=partial_reduction_tile_sizes,
+        thread=thread_tile_sizes,
+        lane_basis=lane_basis,
+        subgroup_basis=subgroup_basis,
+    )
+
+    pipeline_attr = iree_gpu.PipelineAttr.get(
+        iree_gpu.LoweringPipeline.VectorDistribute
+    )
+    pipeline_options = iree_gpu.PipelineOptionsAttr.get()
+    translation_info = iree_codegen.TranslationInfoAttr.get(
+        pass_pipeline=pipeline_attr,
+        workgroup_size=[workgroup_size, 1, 1],
+        subgroup_size=subgroup_size,
+        configuration=ir.DictAttr.get({"gpu_pipeline_options": pipeline_options}),
+    )
+    return iree_codegen.CompilationInfoAttr.get(lowering_config, translation_info)

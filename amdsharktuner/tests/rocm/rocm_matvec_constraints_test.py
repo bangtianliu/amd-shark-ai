@@ -114,3 +114,38 @@ def test_matvec_constraints_unsatisfiable_small_reduction(
 ) -> None:
     model = _solve(gpu_target_info, parallel_bounds=[4096], reduction_bound=7, bitwidth=16)
     assert model is None
+
+
+def test_generate_matvec_compilation_info(
+    tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
+) -> None:
+    num_loops = 2
+    reduction_dim = 1
+
+    workgroup_tiles = [4, 0]
+    partial_reduction_tiles = [0, 256 * 8]
+    thread_tiles = [0, 8]
+
+    lane_counts = [1] * num_loops
+    lane_counts[reduction_dim] = 64
+    subgroup_counts = [1] * num_loops
+    subgroup_counts[reduction_dim] = 256 // 64
+    basis_mapping = list(range(num_loops))
+
+    info = rocm_dispatch_constraints.generate_matvec_vector_distribute_compilation_infos(
+        tuner_ctx=tuner_ctx,
+        workgroup_tile_sizes=workgroup_tiles,
+        partial_reduction_tile_sizes=partial_reduction_tiles,
+        thread_tile_sizes=thread_tiles,
+        lane_basis=[lane_counts, basis_mapping],
+        subgroup_basis=[subgroup_counts, basis_mapping],
+        workgroup_size=256,
+        subgroup_size=64,
+    )
+
+    info_str = str(info)
+    assert "VectorDistribute" in info_str
+    assert "partial_reduction" in info_str
+    assert "lane_basis" in info_str
+    assert "subgroup_basis" in info_str
+    assert "thread" in info_str
