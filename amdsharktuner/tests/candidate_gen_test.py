@@ -450,3 +450,61 @@ def test_get_supported_dispatch_tuners() -> None:
     assert (
         candidate_gen.get_supported_dispatch_tuners("gfx942", Pipeline.Distribute) == []
     )
+
+
+def test_matvec_end_to_end_candidate_generation_and_td_spec(
+    tuner_ctx: common.TunerContext,
+) -> None:
+    context = tuner_ctx.mlir_ctx
+    module_str = """
+        builtin.module{
+            func.func @test(%A: tensor<4096x4096xf16>, %x: tensor<4096xf16>) -> tensor<4096xf32> {
+                %cst = arith.constant 0.0 : f32
+                %init = tensor.empty() : tensor<4096xf32>
+                %fill = linalg.fill ins(%cst : f32) outs(%init : tensor<4096xf32>) -> tensor<4096xf32>
+                %y = linalg.matvec {root_op = #iree_codegen.root_op<set = 0>}
+                    ins(%A, %x : tensor<4096x4096xf16>, tensor<4096xf16>)
+                    outs(%fill : tensor<4096xf32>) -> tensor<4096xf32>
+                return %y : tensor<4096xf32>
+            }
+        }"""
+    ir_module = ir.Module.parse(module_str, context)
+
+    dispatch_tuners = candidate_gen.get_supported_dispatch_tuners(
+        "gfx942", iree_gpu.LoweringPipeline.VectorDistribute
+    )
+    tuner = candidate_gen.instantiate_dispatch_tuner(
+        ir_module, tuner_ctx, dispatch_tuners
+    )
+    assert tuner is not None
+    assert tuner.get_dispatch_kind() == common.DispatchKind.matvec
+
+    target_info = iree_gpu.TargetInfo(
+        context=context,
+        arch="gfx942",
+        subgroup_size_choices=[64],
+        max_workgroup_sizes=[1024, 1024, 1024],
+        max_thread_count_per_workgroup=1024,
+        max_workgroup_memory_bytes=65536,
+        workgroup_count=304,
+        simds_per_workgroup=4,
+        mma_intrinsics=[iree_gpu.MMAIntrinsic.MFMA_F32_16x16x16_F16],
+    )
+
+    config_lists = list(
+        candidate_gen.generate_solutions(
+            dispatch_tuner=tuner,
+            target_info=target_info,
+            tuner_context=tuner_ctx,
+            num_subgroups=4,
+        )
+    )
+    assert len(config_lists) >= 1
+
+    # Build td_spec from first candidate
+    td_spec = tuner.get_td_spec(config_lists[0])
+    td_str = str(td_spec)
+    assert "VectorDistribute" in td_str
+    assert "partial_reduction" in td_str
+    assert "lane_basis" in td_str
+    assert "@__kernel_config" in td_str
