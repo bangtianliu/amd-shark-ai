@@ -706,9 +706,7 @@ def generate_matvec_solutions(
         first_nonunit_parallel = next(
             (
                 d
-                for d, b in zip(
-                    op_info.parallel_dim_indices, op_info.parallel_bounds
-                )
+                for d, b in zip(op_info.parallel_dim_indices, op_info.parallel_bounds)
                 if b != 1
             ),
             None,
@@ -725,17 +723,15 @@ def generate_matvec_solutions(
         subgroup_counts = [1] * op_info.num_loops
         subgroup_counts[op_info.reduction_dim_index] = wg // sg
 
-        compilation_info = (
-            rocm_dispatch_constraints.generate_matvec_vector_distribute_compilation_infos(
-                tuner_ctx=tuner_ctx,
-                workgroup_tile_sizes=workgroup_tile_sizes,
-                partial_reduction_tile_sizes=partial_reduction_tile_sizes,
-                thread_tile_sizes=thread_tile_sizes,
-                lane_basis=[lane_counts, basis_mapping],
-                subgroup_basis=[subgroup_counts, basis_mapping],
-                workgroup_size=wg,
-                subgroup_size=sg,
-            )
+        compilation_info = rocm_dispatch_constraints.generate_matvec_vector_distribute_compilation_infos(
+            tuner_ctx=tuner_ctx,
+            workgroup_tile_sizes=workgroup_tile_sizes,
+            partial_reduction_tile_sizes=partial_reduction_tile_sizes,
+            thread_tile_sizes=thread_tile_sizes,
+            lane_basis=[lane_counts, basis_mapping],
+            subgroup_basis=[subgroup_counts, basis_mapping],
+            workgroup_size=wg,
+            subgroup_size=sg,
         )
 
         knob_assignment = rocm_common.LLVMGPUMatvecKnobs(

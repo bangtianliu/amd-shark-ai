@@ -370,25 +370,17 @@ class MatvecSpecBuilder(SpecBuilder):
                 indexing_maps=self.op_info.indexing_maps,
             )
 
-            contraction_dims = linalg.infer_contraction_dimensions(
-                self.op_info.root_op
-            )
+            contraction_dims = linalg.infer_contraction_dimensions(self.op_info.root_op)
             batch_sizes = [
-                self.op_info.parallel_bounds[
-                    self.op_info.parallel_dim_indices.index(d)
-                ]
+                self.op_info.parallel_bounds[self.op_info.parallel_dim_indices.index(d)]
                 for d in contraction_dims.batch
             ]
             m_sizes = [
-                self.op_info.parallel_bounds[
-                    self.op_info.parallel_dim_indices.index(d)
-                ]
+                self.op_info.parallel_bounds[self.op_info.parallel_dim_indices.index(d)]
                 for d in contraction_dims.m
             ]
             n_sizes = [
-                self.op_info.parallel_bounds[
-                    self.op_info.parallel_dim_indices.index(d)
-                ]
+                self.op_info.parallel_bounds[self.op_info.parallel_dim_indices.index(d)]
                 for d in contraction_dims.n
             ]
             k_sizes = [self.op_info.reduction_bound]

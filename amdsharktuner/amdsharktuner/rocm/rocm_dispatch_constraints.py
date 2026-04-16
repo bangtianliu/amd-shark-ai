@@ -688,9 +688,7 @@ def generate_matvec_vector_distribute_constraints(
 
     constraints.append(workgroup_size % subgroup_size == 0)
     constraints.append(workgroup_size >= subgroup_size)
-    constraints.append(
-        workgroup_size <= gpu_target_info.max_thread_count_per_workgroup
-    )
+    constraints.append(workgroup_size <= gpu_target_info.max_thread_count_per_workgroup)
 
     constraints.append(num_parallel_reductions * 4 <= workgroup_size)
     constraints.append(parallel_dim_bound % num_parallel_reductions == 0)

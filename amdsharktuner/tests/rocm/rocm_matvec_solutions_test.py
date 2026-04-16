@@ -32,7 +32,9 @@ def gpu_target_info(tuner_ctx: common.TunerContext) -> iree_gpu.TargetInfo:
     )
 
 
-def _make_matvec_op_info(tuner_ctx: common.TunerContext) -> dispatch_parser.MatvecOpInfo:
+def _make_matvec_op_info(
+    tuner_ctx: common.TunerContext,
+) -> dispatch_parser.MatvecOpInfo:
     f16 = tuner_ctx.type.f16
     f32 = tuner_ctx.type.f32
     return dispatch_parser.MatvecOpInfo(

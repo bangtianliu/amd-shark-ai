@@ -27,15 +27,17 @@ def _build_dummy_compilation_info(
     subgroup_counts = [1] * num_loops
     subgroup_counts[reduction_dim] = 4
     mapping = list(range(num_loops))
-    return rocm_dispatch_constraints.generate_matvec_vector_distribute_compilation_infos(
-        tuner_ctx=tuner_ctx,
-        workgroup_tile_sizes=workgroup,
-        partial_reduction_tile_sizes=partial_reduction,
-        thread_tile_sizes=thread,
-        lane_basis=[lane_counts, mapping],
-        subgroup_basis=[subgroup_counts, mapping],
-        workgroup_size=256,
-        subgroup_size=64,
+    return (
+        rocm_dispatch_constraints.generate_matvec_vector_distribute_compilation_infos(
+            tuner_ctx=tuner_ctx,
+            workgroup_tile_sizes=workgroup,
+            partial_reduction_tile_sizes=partial_reduction,
+            thread_tile_sizes=thread,
+            lane_basis=[lane_counts, mapping],
+            subgroup_basis=[subgroup_counts, mapping],
+            workgroup_size=256,
+            subgroup_size=64,
+        )
     )
 
 

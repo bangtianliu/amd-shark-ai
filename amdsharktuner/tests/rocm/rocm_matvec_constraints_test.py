@@ -44,15 +44,17 @@ def _solve(
     workgroup_size = z3.Int("workgroup_size")
     num_parallel_reductions = z3.Int("num_parallel_reductions")
 
-    constraints = rocm_dispatch_constraints.generate_matvec_vector_distribute_constraints(
-        parallel_bounds=parallel_bounds,
-        reduction_bound=reduction_bound,
-        largest_operand_bitwidth=bitwidth,
-        subgroup_size=subgroup_size,
-        thread_loads=thread_loads,
-        workgroup_size=workgroup_size,
-        num_parallel_reductions=num_parallel_reductions,
-        gpu_target_info=gpu_target_info,
+    constraints = (
+        rocm_dispatch_constraints.generate_matvec_vector_distribute_constraints(
+            parallel_bounds=parallel_bounds,
+            reduction_bound=reduction_bound,
+            largest_operand_bitwidth=bitwidth,
+            subgroup_size=subgroup_size,
+            thread_loads=thread_loads,
+            workgroup_size=workgroup_size,
+            num_parallel_reductions=num_parallel_reductions,
+            gpu_target_info=gpu_target_info,
+        )
     )
 
     solver = z3.Solver()
@@ -65,7 +67,9 @@ def _solve(
 def test_matvec_constraints_basic(
     tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
 ) -> None:
-    model = _solve(gpu_target_info, parallel_bounds=[4096], reduction_bound=4096, bitwidth=16)
+    model = _solve(
+        gpu_target_info, parallel_bounds=[4096], reduction_bound=4096, bitwidth=16
+    )
     assert model is not None
     subgroup = model[z3.Int("subgroup_size")].as_long()
     tl = model[z3.Int("thread_loads")].as_long()
@@ -85,7 +89,9 @@ def test_matvec_constraints_basic(
 def test_matvec_constraints_gemv_shape(
     tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
 ) -> None:
-    model = _solve(gpu_target_info, parallel_bounds=[1], reduction_bound=8192, bitwidth=16)
+    model = _solve(
+        gpu_target_info, parallel_bounds=[1], reduction_bound=8192, bitwidth=16
+    )
     assert model is not None
     npr = model[z3.Int("num_parallel_reductions")].as_long()
     assert npr == 1
@@ -94,7 +100,9 @@ def test_matvec_constraints_gemv_shape(
 def test_matvec_constraints_batched(
     tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
 ) -> None:
-    model = _solve(gpu_target_info, parallel_bounds=[8, 1], reduction_bound=4096, bitwidth=16)
+    model = _solve(
+        gpu_target_info, parallel_bounds=[8, 1], reduction_bound=4096, bitwidth=16
+    )
     assert model is not None
     npr = model[z3.Int("num_parallel_reductions")].as_long()
     assert 8 % npr == 0
@@ -103,7 +111,9 @@ def test_matvec_constraints_batched(
 def test_matvec_constraints_f32(
     tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
 ) -> None:
-    model = _solve(gpu_target_info, parallel_bounds=[4096], reduction_bound=4096, bitwidth=32)
+    model = _solve(
+        gpu_target_info, parallel_bounds=[4096], reduction_bound=4096, bitwidth=32
+    )
     assert model is not None
     tl = model[z3.Int("thread_loads")].as_long()
     assert tl in (1, 2, 4)
@@ -112,7 +122,9 @@ def test_matvec_constraints_f32(
 def test_matvec_constraints_unsatisfiable_small_reduction(
     tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
 ) -> None:
-    model = _solve(gpu_target_info, parallel_bounds=[4096], reduction_bound=7, bitwidth=16)
+    model = _solve(
+        gpu_target_info, parallel_bounds=[4096], reduction_bound=7, bitwidth=16
+    )
     assert model is None
 
 
@@ -132,15 +144,17 @@ def test_generate_matvec_compilation_info(
     subgroup_counts[reduction_dim] = 256 // 64
     basis_mapping = list(range(num_loops))
 
-    info = rocm_dispatch_constraints.generate_matvec_vector_distribute_compilation_infos(
-        tuner_ctx=tuner_ctx,
-        workgroup_tile_sizes=workgroup_tiles,
-        partial_reduction_tile_sizes=partial_reduction_tiles,
-        thread_tile_sizes=thread_tiles,
-        lane_basis=[lane_counts, basis_mapping],
-        subgroup_basis=[subgroup_counts, basis_mapping],
-        workgroup_size=256,
-        subgroup_size=64,
+    info = (
+        rocm_dispatch_constraints.generate_matvec_vector_distribute_compilation_infos(
+            tuner_ctx=tuner_ctx,
+            workgroup_tile_sizes=workgroup_tiles,
+            partial_reduction_tile_sizes=partial_reduction_tiles,
+            thread_tile_sizes=thread_tiles,
+            lane_basis=[lane_counts, basis_mapping],
+            subgroup_basis=[subgroup_counts, basis_mapping],
+            workgroup_size=256,
+            subgroup_size=64,
+        )
     )
 
     info_str = str(info)

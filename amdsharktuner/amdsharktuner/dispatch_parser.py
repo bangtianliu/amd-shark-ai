@@ -501,9 +501,7 @@ class MatvecOpInterfaceParser(DispatchParser):
                     return shape[dim_list.index(dim_idx)]
             assert False, f"dim {dim_idx} not found in any operand indexing map"
 
-        parallel_bounds: list[int] = [
-            lookup_dim_size(d) for d in parallel_dim_indices
-        ]
+        parallel_bounds: list[int] = [lookup_dim_size(d) for d in parallel_dim_indices]
         reduction_bound = lookup_dim_size(reduction_dim_index)
 
         def operand_size_and_bits(t: ir.RankedTensorType) -> tuple[int, int]:

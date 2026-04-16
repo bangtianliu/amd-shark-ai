@@ -266,7 +266,9 @@ def test_contraction_tuner_still_rejects_matvec(tuner_ctx: common.TunerContext) 
         }"""
     ir_module = ir.Module.parse(module_str, context)
     root_op = iree_codegen.get_tuner_root_ops(ir_module)[0]
-    assert not rocm_tuners.ROCmContractionVectorDistributeTuner.supports_root_op(root_op)
+    assert not rocm_tuners.ROCmContractionVectorDistributeTuner.supports_root_op(
+        root_op
+    )
 
 
 def test_matvec_tuner_rejects_full_matmul(tuner_ctx: common.TunerContext) -> None:
