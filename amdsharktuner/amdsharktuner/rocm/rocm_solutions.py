@@ -641,9 +641,6 @@ def generate_attention_solutions(
             yield config_list
 
 
-_SUPPORTED_MATVEC_BITWIDTHS: frozenset[int] = frozenset({4, 8, 16, 32})
-
-
 def generate_matvec_solutions(
     tuner_ctx: common.TunerContext,
     op_info: dispatch_parser.MatvecOpInfo,
@@ -657,13 +654,6 @@ def generate_matvec_solutions(
     containing a TuningConfiguration whose configuration is a
     CompilationInfoAttr and whose knob_assignment is an LLVMGPUMatvecKnobs.
     """
-    if op_info.largest_operand_bitwidth not in _SUPPORTED_MATVEC_BITWIDTHS:
-        tuner_ctx.logger.debug(
-            f"Skipping matvec candidates: unsupported bitwidth "
-            f"{op_info.largest_operand_bitwidth}"
-        )
-        return
-
     if any(b < 0 for b in op_info.parallel_bounds) or op_info.reduction_bound < 0:
         tuner_ctx.logger.debug(
             "Skipping matvec candidates: dynamic shapes not supported"
@@ -675,7 +665,7 @@ def generate_matvec_solutions(
     workgroup_size = z3.Int("workgroup_size")
     num_parallel_reductions = z3.Int("num_parallel_reductions")
 
-    constraints = (
+    constraints = list(
         rocm_dispatch_constraints.generate_matvec_vector_distribute_constraints(
             parallel_bounds=op_info.parallel_bounds,
             reduction_bound=op_info.reduction_bound,
@@ -687,6 +677,10 @@ def generate_matvec_solutions(
             gpu_target_info=gpu_target_info,
         )
     )
+
+    if not constraints:
+        tuner_ctx.logger.debug("Skipping matvec candidates: no feasible constraints")
+        return
 
     solver = z3.Solver()
     solver.add(z3.simplify(z3.And(constraints)))

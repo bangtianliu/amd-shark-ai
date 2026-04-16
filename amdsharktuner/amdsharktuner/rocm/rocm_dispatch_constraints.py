@@ -638,6 +638,9 @@ def generate_attention_vector_distribute_constraints(
     return constraints
 
 
+_SUPPORTED_MATVEC_BITWIDTHS: frozenset[int] = frozenset({4, 8, 16, 32})
+
+
 def generate_matvec_vector_distribute_constraints(
     parallel_bounds: list[int],
     reduction_bound: int,
@@ -648,6 +651,10 @@ def generate_matvec_vector_distribute_constraints(
     num_parallel_reductions: z3.ArithRef,
     gpu_target_info: iree_gpu.TargetInfo,
 ) -> list[z3.BoolRef]:
+    # Matches IREE's bitwidth gate at ReductionConfigUtils.cpp:727.
+    if largest_operand_bitwidth not in _SUPPORTED_MATVEC_BITWIDTHS:
+        return []
+
     subgroup_choices = list(gpu_target_info.subgroup_size_choices)
     assert subgroup_choices, "gpu_target_info.subgroup_size_choices is empty"
 
