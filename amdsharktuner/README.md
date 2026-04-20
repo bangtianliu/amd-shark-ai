@@ -19,6 +19,14 @@ source .venv/bin/activate
 
 ### Install python dependencies:
 
+**Runtime dependencies:**
+```shell
+pip install -r requirements.txt
+```
+
+> [!NOTE]
+> These dependencies include IREE packages
+
 **Development dependencies:**
 ```shell
 pip install -r requirements-dev.txt
