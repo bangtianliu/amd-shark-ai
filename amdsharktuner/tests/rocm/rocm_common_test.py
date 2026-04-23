@@ -5,6 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 import logging
+import math
 import pytest
 from types import SimpleNamespace
 
@@ -362,3 +363,21 @@ def test_compute_rocprof_avg_kernel_time(caplog):
     trace_rows = [drop_row] * 10 + [cal_row] * 5 + [cal_row_2] * 5
     avg_us = rocm_common.compute_rocprof_avg_kernel_time(trace_rows)
     assert avg_us == pytest.approx(1.75)
+
+
+def test_class_RocProfBenchmarkResult():
+    result = rocm_common.RocProfBenchmarkResult(
+        candidate_id=0,
+        time=math.nan,
+        device_id="0",
+    )
+    assert result.is_valid() == False
+    result.time = math.inf
+    assert result.is_valid() == False
+    result.time = 1.0
+    assert result.is_valid() == True
+    # Test __iter__.
+    candidate_id, time, device_id = result
+    assert candidate_id == 0
+    assert time == 1.0
+    assert device_id == "0"
