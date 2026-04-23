@@ -154,26 +154,28 @@ def generate_generic_contraction_solutions(
             )
 
     # Apply padding for TileAndFuse pipeline to get better tile sizes.
-    # Note: Only apply for IGEMM convolutions. Direct convolution uses original
+    # Note: Skip direct convolution. Direct convolution uses original
     # convolution indexing maps which have complex affine expressions (e.g., d3 + d6)
     # that cannot be cast to AffineDimExpr. Skip padding for direct conv.
     overpadding_applied = False
-    if (
-        codegen_pipeline == iree_gpu.LoweringPipeline.TileAndFuse
-        and igemm_details is not None
-    ):
-        # Use IGEMM contraction maps (dimensions are restructured).
-        padding_maps = [
-            map_attr.value for map_attr in igemm_details.igemm_contraction_maps
-        ]
+    if codegen_pipeline == iree_gpu.LoweringPipeline.TileAndFuse:
+        padding_maps = None
+        if igemm_details is not None:
+            # Use IGEMM contraction maps (dimensions are restructured).
+            padding_maps = [
+                map_attr.value for map_attr in igemm_details.igemm_contraction_maps
+            ]
+        elif dispatch_kind == common.DispatchKind.contraction:
+            padding_maps = indexing_maps
 
-        (
-            matmul_size.M,
-            matmul_size.N,
-            overpadding_applied,
-        ) = common.calculate_padded_dimensions(
-            matmul_size.M, matmul_size.N, contraction_dims, padding_maps
-        )
+        if padding_maps is not None:
+            (
+                matmul_size.M,
+                matmul_size.N,
+                overpadding_applied,
+            ) = common.calculate_padded_dimensions(
+                matmul_size.M, matmul_size.N, contraction_dims, padding_maps
+            )
 
     M, N, K = matmul_size.M, matmul_size.N, matmul_size.K
     tuner_ctx.logger.debug(

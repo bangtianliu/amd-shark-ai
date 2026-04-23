@@ -263,6 +263,56 @@ def test_generate_solutions_tile_and_fuse_contraction_padding(
             assert promote == [0, 1]
 
 
+def test_generate_solutions_tile_and_fuse_contraction_overpadding(
+    tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
+) -> None:
+    context = tuner_ctx.mlir_ctx
+    f16 = tuner_ctx.type.f16
+    f32 = tuner_ctx.type.f32
+
+    m, n, k = 150000, 16384, 4096
+
+    with ir.Location.unknown(context):
+        module = ir.Module.create()
+        build_func_with_matmul(module, m, n, k, f16, f16, f32)
+
+        root_ops = iree_codegen.get_tuner_root_ops(module)
+        assert len(root_ops) == 1
+        root_op = root_ops[0]
+
+        parser = dispatch_parser.ContractionOpInterfaceParser(root_op, tuner_ctx)
+        op_info = parser.get_op_info()
+        gen = rocm_constraint_generators.ROCmContractionTileAndFuseConstraintGenerator(
+            op_info
+        )
+
+        solutions = list(
+            gen.generate_solutions(
+                tuner_context=tuner_ctx,
+                gpu_target_info=gpu_target_info,
+                num_subgroups=4,
+                allowed_waves_per_eu=[2],
+                pipeline_options_search_space=rocm_dispatch_constraints.PipelineOptionsSearchSpace(),
+            )
+        )
+
+        assert len(solutions) > 0, "No solutions generated with TileAndFuse pipeline."
+        for solution in solutions:
+            assert len(solution) == 1
+            config = solution[0]
+            assert isinstance(config, common.TuningConfiguration)
+
+            assert config.name == "compilation_info"
+            assert isinstance(config.configuration, iree_codegen.CompilationInfoAttr)
+
+            lowering_config = config.configuration.lowering_config
+            assert "padding =" in str(lowering_config)
+            # padding_conv only for convolutions, not contractions.
+            assert "padding_conv =" not in str(lowering_config)
+            promote = [int(x) for x in lowering_config.attributes["promote_operands"]]
+            assert promote == [0, 1]
+
+
 def test_generate_solutions_tile_and_fuse_conv_padding(
     tuner_ctx: common.TunerContext, gpu_target_info: iree_gpu.TargetInfo
 ) -> None:

@@ -526,6 +526,16 @@ def test_calculate_padded_dimensions(
         assert N_padded == [300], f"Expected N not padded, got {N_padded}"
         assert padding_applied == False
 
+        (M_padded, N_padded, padding_applied,) = common.calculate_padded_dimensions(
+            M=[150000],
+            N=[16384],
+            contraction_dims=contraction_dims,
+            contraction_maps=[lhs_map, rhs_map, res_map],
+        )
+        assert M_padded == [150016], f"Expected M padded to 150016, got {M_padded}"
+        assert N_padded == [16384], f"Expected N unchanged, got {N_padded}"
+        assert padding_applied == True
+
 
 def test_is_affine_expr_function_of_dim(tuner_ctx: common.TunerContext) -> None:
     with tuner_ctx.mlir_ctx:
